@@ -1,12 +1,17 @@
 # Areté Microsoft 365 MCP Server policy.
 #
 # Schema:
-#   defaults.allow:  list of tools every authenticated user may call
-#   users.<upn>.allow: extra tools allowed for a specific Entra user
-#   users.<upn>.deny:  tools explicitly denied for a specific user (wins over allow)
+#   defaults.allow:        list of tools every authenticated user may call
+#   users.<upn>.allow:     extra tools allowed for a specific Entra user
+#   users.<upn>.deny:      tools explicitly denied for a specific user (wins over allow)
 #
 # Precedence: user.deny > user.allow > defaults.allow > default-deny.
 # Unknown users fall through to defaults.allow.
+#
+# All write tools are deliberately OFF defaults.allow. Per-user opt-in is the
+# point of the policy file: a misconfiguration shouldn't grant blanket send/
+# update/delete authority across the tenant. Add a `users.<upn>.allow` block
+# for each operator who needs write access.
 
 defaults:
   allow:
@@ -34,14 +39,22 @@ defaults:
     - download-bytes
     - parse-teams-url
 
-# Example per-user overrides. The keys are Entra userPrincipalNames.
+# Example per-user overrides. Keys are Entra userPrincipalNames (case-insensitive).
 #
 # users:
 #   spencer@areteintelligence.com:
 #     allow:
+#       # Mail drafts + send
 #       - create-draft-email
 #       - update-mail-message
+#       - add-mail-attachment
 #       - send-draft-message
-#   contractor@example.com:
+#       - delete-mail-message
+#       # Calendar writes
+#       - create-calendar-event
+#       - update-calendar-event
+#       - delete-calendar-event
+#
+#   readonly-bot@areteintelligence.com:
 #     deny:
 #       - download-bytes

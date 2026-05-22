@@ -1,6 +1,84 @@
 import { z } from 'zod';
 import { OData, type Tool } from './types.js';
 
+const dateTimeTimeZoneSchema = z
+  .object({
+    dateTime: z.string().describe('Local date-time, e.g. 2026-05-22T14:30:00'),
+    timeZone: z
+      .string()
+      .describe('IANA or Windows timezone, e.g. America/New_York or Pacific Standard Time'),
+  })
+  .passthrough();
+
+const attendeeSchema = z
+  .object({
+    emailAddress: z
+      .object({
+        address: z.string().describe('SMTP address'),
+        name: z.string().optional(),
+      })
+      .passthrough(),
+    type: z.enum(['required', 'optional', 'resource']).optional().describe('Defaults to required'),
+  })
+  .passthrough();
+
+const locationSchema = z
+  .object({
+    displayName: z.string().optional(),
+    address: z
+      .object({
+        street: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        countryOrRegion: z.string().optional(),
+        postalCode: z.string().optional(),
+      })
+      .passthrough()
+      .optional(),
+    coordinates: z
+      .object({ latitude: z.number().optional(), longitude: z.number().optional() })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+const eventBodySchema = z
+  .object({
+    contentType: z.enum(['text', 'html', 'Text', 'HTML']).describe('text or html'),
+    content: z.string(),
+  })
+  .passthrough();
+
+/**
+ * Mutable Event resource. Required-on-create fields (subject, start, end) are
+ * documented but not enforced because update-calendar-event uses the same
+ * schema for partial updates. Graph validates server-side either way.
+ */
+const eventWriteSchema = z
+  .object({
+    subject: z.string().optional().describe('Event subject; required for create.'),
+    body: eventBodySchema.optional(),
+    start: dateTimeTimeZoneSchema
+      .optional()
+      .describe('Event start; required for create. Use the timezone field too.'),
+    end: dateTimeTimeZoneSchema.optional().describe('Event end; required for create.'),
+    location: locationSchema.optional(),
+    locations: z.array(locationSchema).optional().describe('For multi-location events.'),
+    attendees: z.array(attendeeSchema).optional(),
+    isAllDay: z.boolean().optional(),
+    isOnlineMeeting: z.boolean().optional(),
+    onlineMeetingProvider: z
+      .enum(['teamsForBusiness', 'skypeForBusiness', 'skypeForConsumer', 'unknown'])
+      .optional(),
+    importance: z.enum(['low', 'normal', 'high']).optional(),
+    sensitivity: z.enum(['normal', 'personal', 'private', 'confidential']).optional(),
+    showAs: z.enum(['free', 'tentative', 'busy', 'oof', 'workingElsewhere', 'unknown']).optional(),
+    categories: z.array(z.string()).optional(),
+    reminderMinutesBeforeStart: z.number().optional(),
+    isReminderOn: z.boolean().optional(),
+  })
+  .passthrough();
+
 export const calendarTools: readonly Tool[] = [
   {
     name: 'list-calendar-events',
@@ -66,6 +144,62 @@ export const calendarTools: readonly Tool[] = [
       OData.top,
       OData.skip,
       OData.expand,
+    ],
+  },
+
+  // ---------- Write tools (PR 4) ----------
+
+  {
+    name: 'create-calendar-event',
+    description:
+      "Create a calendar event on the signed-in user's default calendar. Returns the created event including its id. Requires subject, start, and end at minimum.",
+    method: 'POST',
+    path: '/me/events',
+    scopes: ['Calendars.ReadWrite'],
+    params: [
+      {
+        name: 'body',
+        location: 'body',
+        schema: eventWriteSchema,
+      },
+    ],
+    llmTip:
+      'Resolve attendee SMTP addresses with list-users (or known contacts) before creating; do not invent addresses. ' +
+      'Set start.timeZone and end.timeZone explicitly — Graph defaults to UTC if you omit them, which is rarely what users want.',
+  },
+  {
+    name: 'update-calendar-event',
+    description:
+      'Update fields on an existing calendar event by id. Any field omitted is left unchanged. Use get-calendar-event first if you need to read the current values before mutating.',
+    method: 'PATCH',
+    path: '/me/events/{event-id}',
+    scopes: ['Calendars.ReadWrite'],
+    params: [
+      {
+        name: 'event-id',
+        location: 'path',
+        schema: z.string().describe('Calendar event id'),
+      },
+      {
+        name: 'body',
+        location: 'body',
+        schema: eventWriteSchema,
+      },
+    ],
+  },
+  {
+    name: 'delete-calendar-event',
+    description:
+      'Delete a calendar event by id. For organizers of recurring events this deletes the whole series — use update-calendar-event with a cancel-style change if a single occurrence is intended.',
+    method: 'DELETE',
+    path: '/me/events/{event-id}',
+    scopes: ['Calendars.ReadWrite'],
+    params: [
+      {
+        name: 'event-id',
+        location: 'path',
+        schema: z.string().describe('Calendar event id'),
+      },
     ],
   },
 ];
