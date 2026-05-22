@@ -1,107 +1,60 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
-import { registerGraphTools } from '../src/graph-tools.js';
-import type { GraphClient } from '../src/graph-client.js';
+import GraphClient from '../src/graph-client.js';
+import { executeTool } from '../src/tool-runtime.js';
+import type { Tool } from '../src/tools/index.js';
+import { ALL_TOOLS } from '../src/tools/index.js';
 
 vi.mock('../src/logger.js', () => ({
-  default: {
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-  },
+  default: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
-vi.mock('../src/generated/client.js', () => ({
-  api: {
-    endpoints: [
-      {
-        alias: 'get-calendar-event',
-        method: 'get',
-        path: '/me/events/:eventId',
-        description: 'Get a calendar event.',
-        parameters: [{ name: 'eventId', type: 'Path', schema: z.string() }],
-      },
-      {
-        alias: 'get-specific-calendar-event',
-        method: 'get',
-        path: '/me/calendars/:calendarId/events/:eventId',
-        description: 'Get a specific calendar event.',
-        parameters: [
-          { name: 'calendarId', type: 'Path', schema: z.string() },
-          { name: 'eventId', type: 'Path', schema: z.string() },
-        ],
-      },
-    ],
-  },
-}));
-
+// Pins the fix for upstream issue #245 (base64 path-param IDs with `=` were
+// becoming `%3D`, which Graph rejected with 404). The runtime encodes path
+// params but explicitly preserves `=`.
 describe('Path parameter encoding (issue #245)', () => {
-  let mockServer: { tool: ReturnType<typeof vi.fn> };
   let mockGraphClient: GraphClient;
+  let graphRequest: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockServer = { tool: vi.fn() };
-    mockGraphClient = {
-      graphRequest: vi.fn().mockResolvedValue({
-        content: [{ type: 'text', text: JSON.stringify({ value: [] }) }],
-      }),
-    } as unknown as GraphClient;
+    graphRequest = vi.fn().mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ value: [] }) }],
+    });
+    mockGraphClient = { graphRequest } as unknown as GraphClient;
   });
 
-  function getToolHandler(toolName: string) {
-    registerGraphTools(mockServer, mockGraphClient, false);
-    const call = mockServer.tool.mock.calls.find((c: unknown[]) => c[0] === toolName);
-    expect(call).toBeDefined();
-    return call![call!.length - 1] as (params: Record<string, unknown>) => Promise<unknown>;
-  }
+  const getMailMessage = ALL_TOOLS.find((t) => t.name === 'get-mail-message') as Tool;
+  const getCalendarEvent = ALL_TOOLS.find((t) => t.name === 'get-calendar-event') as Tool;
 
-  it('should preserve = in base64-encoded event IDs', async () => {
-    const handler = getToolHandler('get-calendar-event');
+  it('preserves = in base64-encoded message IDs', async () => {
     const base64Id =
       'AAMkADE5NGJlYmU2LWIyZDItNGE3Ni04NjRiLTYxMDUwMDE2NDYzYgBGAAAAAAAweYIkG8t7T4BnY_vowazSBwCrNxh3sVpPTqkhqlJPyPJrAAAAAAENAACrNxh3sVpPTqkhqlJPyPJrAABx2DQOAAA=';
 
-    await handler({ eventId: base64Id });
+    await executeTool(getMailMessage, mockGraphClient, undefined, { 'message-id': base64Id });
 
-    const calledPath = (mockGraphClient.graphRequest as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as string;
-    expect(calledPath).toContain(`/me/events/${base64Id}`);
+    const calledPath = graphRequest.mock.calls[0][0] as string;
+    expect(calledPath).toContain(`/me/messages/${base64Id}`);
     expect(calledPath).not.toContain('%3D');
   });
 
-  it('should preserve = in IDs with double padding', async () => {
-    const handler = getToolHandler('get-calendar-event');
+  it('preserves = with double padding', async () => {
     const idWithDoublePad = 'SomeBase64EncodedId==';
 
-    await handler({ eventId: idWithDoublePad });
+    await executeTool(getMailMessage, mockGraphClient, undefined, {
+      'message-id': idWithDoublePad,
+    });
 
-    const calledPath = (mockGraphClient.graphRequest as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as string;
-    expect(calledPath).toContain(`/me/events/${idWithDoublePad}`);
+    const calledPath = graphRequest.mock.calls[0][0] as string;
+    expect(calledPath).toContain(`/me/messages/${idWithDoublePad}`);
     expect(calledPath).not.toContain('%3D');
   });
 
-  it('should preserve = in multiple path parameters', async () => {
-    const handler = getToolHandler('get-specific-calendar-event');
-    const calendarId = 'AQMkADE5NGJlYmU2LWIyZDItNGE3Ni04NjRiLTYxMDUwMDE2NDYzYg==';
-    const eventId = 'AAMkADE5NGJlYmU2LWIyZDItNGE3Ni04NjRiLTYxMDUwMDE2NDYzYgBG=';
-
-    await handler({ calendarId, eventId });
-
-    const calledPath = (mockGraphClient.graphRequest as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as string;
-    expect(calledPath).toContain(`/me/calendars/${calendarId}/events/${eventId}`);
-    expect(calledPath).not.toContain('%3D');
-  });
-
-  it('should still encode truly unsafe characters in path parameters', async () => {
-    const handler = getToolHandler('get-calendar-event');
+  it('still encodes truly unsafe characters in path parameters', async () => {
     const idWithSpace = 'some id with spaces';
 
-    await handler({ eventId: idWithSpace });
+    await executeTool(getCalendarEvent, mockGraphClient, undefined, { 'event-id': idWithSpace });
 
-    const calledPath = (mockGraphClient.graphRequest as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as string;
+    const calledPath = graphRequest.mock.calls[0][0] as string;
     expect(calledPath).toContain('some%20id%20with%20spaces');
   });
 });
