@@ -2,8 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import logger from './logger.js';
 import GraphClient from './graph-client.js';
-import AuthManager from './auth.js';
-import { getRequestTokens } from './request-context.js';
+import { getRequestContext } from './request-context.js';
+import { Policy } from './policy/index.js';
 import {
   ALL_TOOLS,
   ODATA_PARAM_NAMES,
@@ -50,7 +50,6 @@ function encodePathValue(value: string): string {
 }
 
 const CONTROL_PARAM_NAMES = new Set([
-  'account',
   'fetchAllPages',
   'includeHeaders',
   'excludeResponse',
@@ -58,29 +57,41 @@ const CONTROL_PARAM_NAMES = new Set([
   'expandExtendedProperties',
 ]);
 
+function policyDeniedResult(tool: Tool, upn: string | null): CallToolResult {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({
+          error: `Policy denied tool '${tool.name}' for user '${upn ?? 'unknown'}'.`,
+          tip: 'Update policy.yaml or contact the operator to enable this tool for this user.',
+        }),
+      },
+    ],
+    isError: true,
+  };
+}
+
 async function executeTool(
   tool: Tool,
   graphClient: GraphClient,
-  authManager: AuthManager | undefined,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
+  policy?: Policy
 ): Promise<CallToolResult> {
+  const ctx = getRequestContext();
   logger.info(`Tool ${tool.name} called with params: ${JSON.stringify(params)}`);
-  try {
-    // Resolve account-specific token for the local-MSAL path (multi-account).
-    // Skip when an HTTP/OAuth bearer token is already in request context — that token wins.
-    let accountAccessToken: string | undefined;
-    if (authManager && !authManager.isOAuthModeEnabled() && !getRequestTokens()) {
-      const accountParam = params.account as string | undefined;
-      try {
-        accountAccessToken = await authManager.getTokenForAccount(accountParam);
-      } catch (err) {
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ error: (err as Error).message }) }],
-          isError: true,
-        };
-      }
-    }
 
+  if (
+    policy &&
+    !policy.check({ userPrincipalName: ctx?.userPrincipalName ?? null, toolName: tool.name })
+  ) {
+    logger.warn(
+      `Policy denied tool ${tool.name} for ${ctx?.userPrincipalName ?? 'anonymous'} (oid=${ctx?.userOid ?? 'n/a'})`
+    );
+    return policyDeniedResult(tool, ctx?.userPrincipalName ?? null);
+  }
+
+  try {
     const paramByName = new Map<string, ToolParam>();
     for (const p of tool.params) paramByName.set(p.name, p);
 
@@ -95,7 +106,6 @@ async function executeTool(
       const def = paramByName.get(paramName);
 
       if (!def) {
-        // Unknown param. Tolerate it only if it happens to match a path placeholder (defensive).
         if (path.includes(`{${paramName}}`)) {
           path = path.replace(`{${paramName}}`, encodePathValue(String(paramValue)));
           logger.info(`Unknown param ${paramName} matched path placeholder; substituted anyway`);
@@ -171,7 +181,6 @@ async function executeTool(
       rawResponse?: boolean;
       includeHeaders?: boolean;
       excludeResponse?: boolean;
-      accessToken?: string;
     } = {
       method: tool.method,
       headers,
@@ -191,10 +200,6 @@ async function executeTool(
       }
     }
 
-    // Drive-content endpoints either return the bytes directly (raw) or a 302
-    // download URL when returnDownloadUrl is set. The hand-written download-bytes
-    // utility is the canonical path for bytes; this code handles future tools
-    // that return content inline (e.g. recording-content with returnDownloadUrl).
     if (tool.returnDownloadUrl && path.endsWith('/content')) {
       path = path.replace(/\/content$/, '');
     } else if (path.includes('/content') || path.endsWith('/$value')) {
@@ -203,12 +208,8 @@ async function executeTool(
 
     if (params.includeHeaders === true) requestOptions.includeHeaders = true;
     if (params.excludeResponse === true) requestOptions.excludeResponse = true;
-    if (accountAccessToken) requestOptions.accessToken = accountAccessToken;
 
-    const { accessToken: _redacted, ...safeOptions } = requestOptions;
-    logger.info(
-      `Making graph request to ${path} with options: ${JSON.stringify(safeOptions)}${_redacted ? ' [accessToken=REDACTED]' : ''}`
-    );
+    logger.info(`Making graph request to ${path} with options: ${JSON.stringify(requestOptions)}`);
 
     const response = await graphClient.graphRequest(path, requestOptions);
 
@@ -280,11 +281,7 @@ async function executeTool(
   }
 }
 
-function buildMcpParamSchema(
-  tool: Tool,
-  multiAccount: boolean,
-  accountNames: string[]
-): Record<string, z.ZodTypeAny> {
+function buildMcpParamSchema(tool: Tool): Record<string, z.ZodTypeAny> {
   const paramSchema: Record<string, z.ZodTypeAny> = {};
   for (const p of tool.params) paramSchema[p.name] = p.schema;
 
@@ -295,19 +292,6 @@ function buildMcpParamSchema(
         'Follow @odata.nextLink and merge up to 100 pages into one response. ' +
           'Can return enormous payloads — only when the user explicitly needs a full export. ' +
           'Prefer a small top first, then paginate or narrow with filter/search.'
-      )
-      .optional();
-  }
-
-  if (multiAccount) {
-    const accountHint =
-      accountNames.length > 0 ? `Known accounts: ${accountNames.join(', ')}. ` : '';
-    paramSchema['account'] = z
-      .string()
-      .describe(
-        `${accountHint}Microsoft account email to use for this request. ` +
-          `Required when multiple accounts are configured. ` +
-          `Use the list-accounts tool to discover all currently available accounts.`
       )
       .optional();
   }
@@ -346,7 +330,8 @@ function buildMcpParamSchema(
 function registerUtilityToolWithMcp(
   server: McpServer,
   utility: UtilityTool,
-  ctx: UtilityToolContext
+  ctx: UtilityToolContext,
+  policy?: Policy
 ): void {
   server.tool(
     utility.name,
@@ -357,16 +342,41 @@ function registerUtilityToolWithMcp(
       readOnlyHint: utility.readOnlyHint ?? true,
       openWorldHint: utility.openWorldHint ?? true,
     },
-    async (params) => utility.execute(params, ctx)
+    async (params) => {
+      if (policy) {
+        const reqCtx = getRequestContext();
+        if (
+          !policy.check({
+            userPrincipalName: reqCtx?.userPrincipalName ?? null,
+            toolName: utility.name,
+          })
+        ) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  error: `Policy denied tool '${utility.name}' for user '${reqCtx?.userPrincipalName ?? 'unknown'}'.`,
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+      return utility.execute(params, ctx);
+    }
   );
+}
+
+export interface RegisterToolsOptions {
+  policy?: Policy;
 }
 
 export function registerTools(
   server: McpServer,
   graphClient: GraphClient,
-  authManager?: AuthManager,
-  multiAccount: boolean = false,
-  accountNames: string[] = []
+  options: RegisterToolsOptions = {}
 ): number {
   let registeredCount = 0;
   let failedCount = 0;
@@ -380,14 +390,14 @@ export function registerTools(
       server.tool(
         tool.name,
         description,
-        buildMcpParamSchema(tool, multiAccount, accountNames),
+        buildMcpParamSchema(tool),
         {
           title: tool.name,
           readOnlyHint: tool.method === 'GET',
           destructiveHint: ['POST', 'PATCH', 'DELETE'].includes(tool.method),
           openWorldHint: true,
         },
-        async (params) => executeTool(tool, graphClient, authManager, params)
+        async (params) => executeTool(tool, graphClient, params, options.policy)
       );
       registeredCount++;
     } catch (error) {
@@ -396,15 +406,10 @@ export function registerTools(
     }
   }
 
-  const utilityCtx: UtilityToolContext = {
-    graphClient,
-    authManager,
-    multiAccount,
-    accountNames,
-  };
+  const utilityCtx: UtilityToolContext = { graphClient };
   for (const utility of utilityTools) {
     try {
-      registerUtilityToolWithMcp(server, utility, utilityCtx);
+      registerUtilityToolWithMcp(server, utility, utilityCtx, options.policy);
       registeredCount++;
     } catch (error) {
       logger.error(`Failed to register tool ${utility.name}: ${(error as Error).message}`);
@@ -412,9 +417,6 @@ export function registerTools(
     }
   }
 
-  if (multiAccount) {
-    logger.info('Multi-account mode: "account" parameter injected into all tool schemas');
-  }
   logger.info(`Tool registration complete: ${registeredCount} registered, ${failedCount} failed`);
   return registeredCount;
 }

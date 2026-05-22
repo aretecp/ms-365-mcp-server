@@ -1,26 +1,25 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import express, { Request, Response } from 'express';
 import logger, { enableConsoleLogging } from './logger.js';
 import { registerTools } from './tool-runtime.js';
 import { buildMcpServerInstructions } from './mcp-instructions.js';
 import GraphClient from './graph-client.js';
-import AuthManager, { resolveAuthScopes } from './auth.js';
-import { MicrosoftOAuthProvider } from './oauth-provider.js';
+import { resolveAuthScopes } from './oauth/scopes.js';
 import {
   exchangeCodeForToken,
-  microsoftBearerTokenAuthMiddleware,
   OAuthUpstreamError,
-  refreshAccessToken,
   toOAuthErrorResponse,
 } from './lib/microsoft-auth.js';
 import { isAllowedRedirectUri, parseAllowlist } from './lib/redirect-uri-validation.js';
 import type { CommandOptions } from './cli.ts';
-import { getSecrets, type AppSecrets } from './secrets.js';
+import { AppSecrets } from './secrets.js';
 import { getCloudEndpoints } from './cloud-config.js';
 import { requestContext } from './request-context.js';
-import crypto from 'node:crypto';
+import { PkceStore } from './oauth/pkce-store.js';
+import type { SessionManager } from './sessions/manager.js';
+import { sessionAuth, type AuthenticatedRequest } from './middleware/session-auth.js';
+import type { Policy } from './policy/index.js';
 
 /**
  * Parse HTTP option into host and port components.
@@ -44,31 +43,32 @@ function parseHttpOption(httpOption: string | boolean): { host: string | undefin
   return { host: undefined, port };
 }
 
+export interface MicrosoftGraphServerDeps {
+  options: CommandOptions;
+  secrets: AppSecrets;
+  sessionManager: SessionManager;
+  policy: Policy;
+}
+
 class MicrosoftGraphServer {
-  private authManager: AuthManager;
-  private options: CommandOptions;
-  private graphClient: GraphClient | null;
-  private secrets: AppSecrets | null;
+  private readonly options: CommandOptions;
+  private readonly secrets: AppSecrets;
+  private readonly sessionManager: SessionManager;
+  private readonly policy: Policy;
+  private readonly graphClient: GraphClient;
+  private readonly pkceStore = new PkceStore();
   private version: string = '0.0.0';
-  private multiAccount: boolean = false;
-  private accountNames: string[] = [];
 
-  // Two-leg PKCE: stores client's code_challenge and server's code_verifier, keyed by OAuth state
-  private pkceStore: Map<
-    string,
-    {
-      clientCodeChallenge: string;
-      clientCodeChallengeMethod: string;
-      serverCodeVerifier: string;
-      createdAt: number;
-    }
-  > = new Map();
+  constructor(deps: MicrosoftGraphServerDeps) {
+    this.options = deps.options;
+    this.secrets = deps.secrets;
+    this.sessionManager = deps.sessionManager;
+    this.policy = deps.policy;
+    this.graphClient = new GraphClient(this.options.toon ? 'toon' : 'json');
+  }
 
-  constructor(authManager: AuthManager, options: CommandOptions = {}) {
-    this.authManager = authManager;
-    this.options = options;
-    this.graphClient = null;
-    this.secrets = null;
+  initialize(version: string): void {
+    this.version = version;
   }
 
   private createMcpServer(): McpServer {
@@ -78,42 +78,13 @@ class MicrosoftGraphServer {
         version: this.version,
       },
       {
-        instructions: buildMcpServerInstructions({
-          multiAccount: this.multiAccount,
-        }),
+        instructions: buildMcpServerInstructions({ multiAccount: false }),
       }
     );
 
-    registerTools(
-      server,
-      this.graphClient!,
-      this.authManager,
-      this.multiAccount,
-      this.accountNames
-    );
+    registerTools(server, this.graphClient, { policy: this.policy });
 
     return server;
-  }
-
-  async initialize(version: string): Promise<void> {
-    this.secrets = await getSecrets();
-    this.version = version;
-
-    try {
-      this.multiAccount = await this.authManager.isMultiAccount();
-      if (this.multiAccount) {
-        const accounts = await this.authManager.listAccounts();
-        this.accountNames = accounts.map((a) => a.username).filter((u): u is string => !!u);
-        logger.info(
-          `Multi-account mode detected (${this.accountNames.length} accounts): "account" parameter will be injected into all tool schemas`
-        );
-      }
-    } catch (err) {
-      logger.warn(`Failed to detect multi-account mode: ${(err as Error).message}`);
-    }
-
-    const outputFormat = this.options.toon ? 'toon' : 'json';
-    this.graphClient = new GraphClient(this.authManager, this.secrets, outputFormat);
   }
 
   async start(): Promise<void> {
@@ -122,11 +93,10 @@ class MicrosoftGraphServer {
     }
 
     logger.info('Areté Microsoft 365 MCP Server starting...');
-
     logger.info('Secrets Check:', {
-      CLIENT_ID: this.secrets?.clientId ? `${this.secrets.clientId.substring(0, 8)}...` : 'NOT SET',
-      CLIENT_SECRET: this.secrets?.clientSecret ? 'SET' : 'NOT SET',
-      TENANT_ID: this.secrets?.tenantId || 'NOT SET',
+      CLIENT_ID: this.secrets.clientId ? `${this.secrets.clientId.substring(0, 8)}...` : 'NOT SET',
+      CLIENT_SECRET: this.secrets.clientSecret ? 'SET' : 'NOT SET',
+      TENANT_ID: this.secrets.tenantId || 'NOT SET',
       NODE_ENV: process.env.NODE_ENV || 'NOT SET',
     });
 
@@ -151,24 +121,18 @@ class MicrosoftGraphServer {
         'Access-Control-Allow-Headers',
         'Origin, X-Requested-With, Content-Type, Accept, Authorization, mcp-protocol-version'
       );
-
       if (req.method === 'OPTIONS') {
         res.sendStatus(200);
         return;
       }
-
       next();
     });
 
-    const oauthProvider = new MicrosoftOAuthProvider(this.authManager, this.secrets!);
-
-    // Public URL for browser-facing OAuth endpoints when running behind a reverse
-    // proxy. Server-to-server endpoints (token, register, resource) stay on the
-    // request origin so clients reaching us internally don't need NAT loopback.
+    // Public URL for browser-facing OAuth redirects when behind a reverse proxy.
     const publicUrlRaw = this.options.publicUrl || process.env.MS365_MCP_PUBLIC_URL || null;
     const publicBase = publicUrlRaw ? new URL(publicUrlRaw).href.replace(/\/$/, '') : null;
 
-    app.get('/.well-known/oauth-authorization-server', async (req, res) => {
+    app.get('/.well-known/oauth-authorization-server', (req, res) => {
       const protocol = req.secure ? 'https' : 'http';
       const requestOrigin = `${protocol}://${req.get('host')}`;
       const browserBase = publicBase ?? requestOrigin;
@@ -177,16 +141,18 @@ class MicrosoftGraphServer {
         issuer: browserBase,
         authorization_endpoint: `${browserBase}/authorize`,
         token_endpoint: `${requestOrigin}/token`,
+        revocation_endpoint: `${requestOrigin}/revoke`,
         response_types_supported: ['code'],
         response_modes_supported: ['query'],
-        grant_types_supported: ['authorization_code', 'refresh_token'],
+        grant_types_supported: ['authorization_code'],
         token_endpoint_auth_methods_supported: ['none'],
+        revocation_endpoint_auth_methods_supported: ['none'],
         code_challenge_methods_supported: ['S256'],
         scopes_supported: resolveAuthScopes(),
       });
     });
 
-    app.get('/.well-known/oauth-protected-resource', async (req, res) => {
+    app.get('/.well-known/oauth-protected-resource', (req, res) => {
       const protocol = req.secure ? 'https' : 'http';
       const requestOrigin = `${protocol}://${req.get('host')}`;
       const browserBase = publicBase ?? requestOrigin;
@@ -200,12 +166,10 @@ class MicrosoftGraphServer {
       });
     });
 
-    // Authorization endpoint - redirects to Microsoft.
-    // Two-leg PKCE: client↔server and server↔Microsoft are independent.
     app.get('/authorize', async (req, res) => {
       const url = new URL(req.url!, `${req.protocol}://${req.get('host')}`);
-      const tenantId = this.secrets?.tenantId || 'common';
-      const clientId = this.secrets!.clientId;
+      const tenantId = this.secrets.tenantId || 'common';
+      const clientId = this.secrets.clientId;
       const cloudEndpoints = getCloudEndpoints();
       const microsoftAuthUrl = new URL(
         `${cloudEndpoints.authority}/${tenantId}/oauth2/v2.0/authorize`
@@ -215,7 +179,7 @@ class MicrosoftGraphServer {
       const clientCodeChallengeMethod = url.searchParams.get('code_challenge_method');
       const state = url.searchParams.get('state');
 
-      // Validate redirect_uri before forwarding to Microsoft to mitigate CWE-601.
+      // CWE-601 redirect_uri allowlist.
       const redirectUriParam = url.searchParams.get('redirect_uri');
       if (redirectUriParam) {
         const allowlist = parseAllowlist(process.env.MS365_MCP_ALLOWED_REDIRECT_URIS);
@@ -231,7 +195,6 @@ class MicrosoftGraphServer {
         }
       }
 
-      // Forward parameters Microsoft OAuth v2 supports (but NOT code_challenge — we generate our own).
       const allowedParams = [
         'response_type',
         'redirect_uri',
@@ -242,56 +205,35 @@ class MicrosoftGraphServer {
         'login_hint',
         'domain_hint',
       ];
-
       allowedParams.forEach((param) => {
         const value = url.searchParams.get(param);
-        if (value) {
-          microsoftAuthUrl.searchParams.set(param, value);
-        }
+        if (value) microsoftAuthUrl.searchParams.set(param, value);
       });
 
       if (clientCodeChallenge && state) {
-        const serverCodeVerifier = crypto.randomBytes(32).toString('base64url');
-        const serverCodeChallenge = crypto
-          .createHash('sha256')
-          .update(serverCodeVerifier)
-          .digest('base64url');
-
-        const now = Date.now();
-        const maxAge = 10 * 60 * 1000;
-        const maxEntries = 1000;
-        for (const [key, value] of this.pkceStore) {
-          if (now - value.createdAt > maxAge) {
-            this.pkceStore.delete(key);
-          }
-        }
-
-        if (this.pkceStore.size >= maxEntries) {
-          logger.warn(
-            `PKCE store at capacity (${maxEntries} entries) — rejecting new authorization request`
-          );
-          res.status(503).json({
-            error: 'server_busy',
-            error_description: 'Too many pending authorization requests. Try again later.',
+        try {
+          const { serverCodeChallenge } = this.pkceStore.registerClientChallenge({
+            state,
+            clientCodeChallenge,
+            clientCodeChallengeMethod: clientCodeChallengeMethod ?? 'S256',
           });
-          return;
+          microsoftAuthUrl.searchParams.set('code_challenge', serverCodeChallenge);
+          microsoftAuthUrl.searchParams.set('code_challenge_method', 'S256');
+          logger.info('Two-leg PKCE: stored client challenge, generated server challenge', {
+            state: state.substring(0, 8) + '...',
+          });
+        } catch (error) {
+          if ((error as Error).message === 'pkce_store_full') {
+            res.status(503).json({
+              error: 'server_busy',
+              error_description: 'Too many pending authorization requests. Try again later.',
+            });
+            return;
+          }
+          throw error;
         }
-
-        this.pkceStore.set(state, {
-          clientCodeChallenge,
-          clientCodeChallengeMethod: clientCodeChallengeMethod || 'S256',
-          serverCodeVerifier,
-          createdAt: Date.now(),
-        });
-
-        microsoftAuthUrl.searchParams.set('code_challenge', serverCodeChallenge);
-        microsoftAuthUrl.searchParams.set('code_challenge_method', 'S256');
-
-        logger.info('Two-leg PKCE: stored client challenge, generated server challenge', {
-          state: state.substring(0, 8) + '...',
-        });
       } else if (clientCodeChallenge) {
-        // No state — forward client challenge directly (Claude Code path).
+        // No state — forward client challenge directly.
         microsoftAuthUrl.searchParams.set('code_challenge', clientCodeChallenge);
         if (clientCodeChallengeMethod) {
           microsoftAuthUrl.searchParams.set('code_challenge_method', clientCodeChallengeMethod);
@@ -300,9 +242,7 @@ class MicrosoftGraphServer {
 
       microsoftAuthUrl.searchParams.set('client_id', clientId);
 
-      // Determine base scopes from the client request or from the full server scope set, then
-      // silently inject User.Read (needed by /me access for token verification) and
-      // offline_access (refresh tokens), neither of which is advertised in scopes_supported.
+      // Inject User.Read + offline_access silently (needed for /me access + refresh tokens).
       const clientScope = microsoftAuthUrl.searchParams.get('scope');
       const baseScopes = clientScope
         ? clientScope.split(/\s+/).filter(Boolean)
@@ -315,13 +255,6 @@ class MicrosoftGraphServer {
 
     app.post('/token', async (req, res) => {
       try {
-        logger.info('Token endpoint called', {
-          method: req.method,
-          url: req.url,
-          contentType: req.get('Content-Type'),
-          grant_type: req.body?.grant_type,
-        });
-
         const body = req.body;
         if (!body) {
           res.status(400).json({
@@ -338,66 +271,64 @@ class MicrosoftGraphServer {
           return;
         }
 
-        if (body.grant_type === 'authorization_code') {
-          const tenantId = this.secrets?.tenantId || 'common';
-          const clientId = this.secrets!.clientId;
-          const clientSecret = this.secrets?.clientSecret;
-
-          let serverCodeVerifier: string | undefined;
-
-          if (body.code_verifier) {
-            const clientVerifier = body.code_verifier as string;
-            const clientChallengeComputed = crypto
-              .createHash('sha256')
-              .update(clientVerifier)
-              .digest('base64url');
-
-            for (const [state, pkceData] of this.pkceStore) {
-              if (pkceData.clientCodeChallenge === clientChallengeComputed) {
-                serverCodeVerifier = pkceData.serverCodeVerifier;
-                this.pkceStore.delete(state);
-                logger.info('Two-leg PKCE: matched client verifier, using server verifier', {
-                  state: state.substring(0, 8) + '...',
-                });
-                break;
-              }
-            }
-          }
-
-          const result = await exchangeCodeForToken(
-            body.code as string,
-            body.redirect_uri as string,
-            clientId,
-            clientSecret,
-            tenantId,
-            serverCodeVerifier || (body.code_verifier as string | undefined)
-          );
-          res.json(result);
-        } else if (body.grant_type === 'refresh_token') {
-          const tenantId = this.secrets?.tenantId || 'common';
-          const clientId = this.secrets!.clientId;
-          const clientSecret = this.secrets?.clientSecret;
-
-          const result = await refreshAccessToken(
-            body.refresh_token as string,
-            clientId,
-            clientSecret,
-            tenantId
-          );
-          res.json(result);
-        } else {
+        if (body.grant_type !== 'authorization_code') {
+          // Refresh is handled server-side; sessions don't expose a refresh_token to MCP clients.
           res.status(400).json({
             error: 'unsupported_grant_type',
-            error_description: `Grant type '${body.grant_type}' is not supported`,
+            error_description: `Grant type '${body.grant_type}' is not supported. The MCP client receives a long-lived session id; refresh is handled server-side.`,
           });
+          return;
         }
+
+        const tenantId = this.secrets.tenantId || 'common';
+        const clientId = this.secrets.clientId;
+        const clientSecret = this.secrets.clientSecret;
+
+        // Two-leg PKCE: pick the server-side verifier matching the client's verifier.
+        let serverCodeVerifier: string | undefined;
+        if (body.code_verifier) {
+          serverCodeVerifier = this.pkceStore.consumeForClientVerifier(
+            body.code_verifier as string
+          );
+          if (serverCodeVerifier) {
+            logger.info('Two-leg PKCE: matched client verifier, using server verifier');
+          }
+        }
+
+        const tokens = await exchangeCodeForToken(
+          body.code as string,
+          body.redirect_uri as string,
+          clientId,
+          clientSecret,
+          tenantId,
+          serverCodeVerifier || (body.code_verifier as string | undefined)
+        );
+
+        const session = this.sessionManager.createSession({
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          expires_in: tokens.expires_in,
+          // exchangeCodeForToken's return type doesn't include id_token because the
+          // upstream helper was scope-narrowed. Cast to read it.
+          id_token: (tokens as unknown as { id_token?: string }).id_token,
+          scope: tokens.scope,
+        });
+
+        // Hand the MCP client our opaque session id in place of the real access_token.
+        // Long expires_in so the client doesn't try to refresh; we refresh against
+        // Microsoft transparently on each MCP call when needed.
+        res.json({
+          access_token: session.sessionId,
+          token_type: 'Bearer',
+          expires_in: 60 * 60 * 24 * 30, // 30 days
+          scope: tokens.scope,
+        });
       } catch (error) {
         if (error instanceof OAuthUpstreamError) {
-          logger.warn('Token endpoint: upstream OAuth error surfaced to client', {
+          logger.warn('Token endpoint: upstream OAuth error', {
             upstream_status: error.status,
             error: error.body.error,
             suberror: error.body.suberror,
-            error_codes: error.body.error_codes,
           });
         } else {
           logger.error('Token endpoint error:', error);
@@ -407,20 +338,26 @@ class MicrosoftGraphServer {
       }
     });
 
-    app.use(
-      mcpAuthRouter({
-        provider: oauthProvider,
-        issuerUrl: new URL(publicBase ?? `http://localhost:${port}`),
-      })
-    );
+    app.post('/revoke', async (req, res) => {
+      const token = req.body?.token;
+      if (typeof token !== 'string' || token === '') {
+        res.status(400).json({
+          error: 'invalid_request',
+          error_description: 'token is required',
+        });
+        return;
+      }
+      // RFC 7009 says respond 200 regardless of whether the token existed.
+      await this.sessionManager.revokeSession(token).catch((error) => {
+        logger.warn(`Revocation error (ignored): ${(error as Error).message}`);
+      });
+      res.status(200).end();
+    });
 
-    const mcpAuth = microsoftBearerTokenAuthMiddleware();
+    const mcpAuth = sessionAuth(this.sessionManager);
     const mcpHandlerFactory =
       (passBody: boolean) =>
-      async (
-        req: Request & { microsoftAuth?: { accessToken: string } },
-        res: Response
-      ): Promise<void> => {
+      async (req: AuthenticatedRequest, res: Response): Promise<void> => {
         const handler = async () => {
           const server = this.createMcpServer();
           const transport = new StreamableHTTPServerTransport({
@@ -433,15 +370,25 @@ class MicrosoftGraphServer {
           });
 
           await server.connect(transport);
-          await transport.handleRequest(req as any, res as any, passBody ? req.body : undefined);
+          await transport.handleRequest(req as Request, res, passBody ? req.body : undefined);
         };
 
         try {
-          if (req.microsoftAuth) {
-            await requestContext.run({ accessToken: req.microsoftAuth.accessToken }, handler);
-          } else {
-            await handler();
+          const session = req.session;
+          if (!session) {
+            // sessionAuth guarantees session is set; defensive.
+            res.status(500).json({ error: 'server_error' });
+            return;
           }
+          await requestContext.run(
+            {
+              accessToken: session.tokens.access_token,
+              userOid: session.userOid,
+              tenantId: session.tenantId,
+              userPrincipalName: session.userPrincipalName,
+            },
+            handler
+          );
         } catch (error) {
           logger.error('Error handling MCP request:', error);
           if (!res.headersSent) {

@@ -79,20 +79,11 @@ describe('GraphClient binary response handling', () => {
       })) as typeof fetch;
 
     try {
-      const mockAuth = {
-        getToken: async () => 'fake-token',
-      };
-      const mockSecrets = {
-        clientId: 'x',
-        tenantId: 'common',
-      };
-      const client = new GraphClient(
-        mockAuth as Parameters<typeof GraphClient>[0],
-        mockSecrets as Parameters<typeof GraphClient>[1],
-        'json'
-      );
+      const client = new GraphClient('json');
 
-      const result = (await client.makeRequest('/me/photo/$value')) as Record<string, unknown>;
+      const result = (await client.makeRequest('/me/photo/$value', {
+        accessToken: 'fake-token',
+      })) as Record<string, unknown>;
 
       expect(result).toBeDefined();
       expect(result.contentType).toBe('image/jpeg');

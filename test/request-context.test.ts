@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getRequestTokens, requestContext } from '../src/request-context.js';
 import GraphClient from '../src/graph-client.js';
-import type AuthManager from '../src/auth.js';
-import { AppSecrets } from '../src/secrets.js';
 
 describe('request-context', () => {
   it('should isolate tokens between concurrent async operations', async () => {
@@ -107,16 +105,7 @@ describe('GraphClient request-context integration', () => {
         };
       });
 
-    const mockAuthManager = {
-      getToken: vi.fn().mockResolvedValue(null),
-    } as unknown as AuthManager;
-
-    const mockSecrets: AppSecrets = {
-      clientId: 'test-client',
-      tenantId: 'common',
-    };
-
-    const graphClient = new GraphClient(mockAuthManager, mockSecrets);
+    const graphClient = new GraphClient('json');
 
     const userARequest = requestContext.run({ accessToken: 'USER_A_TOKEN' }, async () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -177,17 +166,7 @@ describe('GraphClient request-context integration', () => {
         };
       });
 
-    const mockAuthManager = {
-      getToken: vi.fn().mockResolvedValue(null),
-    } as unknown as AuthManager;
-
-    const secrets: AppSecrets = {
-      clientId: 'test-client',
-      tenantId: 'common',
-      cloudType: 'global',
-    };
-
-    const graphClient = new GraphClient(mockAuthManager, secrets);
+    const graphClient = new GraphClient('json');
 
     const requestA = requestContext.run({ accessToken: 'ALICE_TOKEN' }, async () => {
       await graphClient.makeRequest('/me/messages');

@@ -3,14 +3,14 @@
 import 'dotenv/config';
 import { parseArgs } from './cli.js';
 import logger from './logger.js';
-import AuthManager from './auth.js';
 import MicrosoftGraphServer from './server.js';
+import { getSecrets } from './secrets.js';
+import { SessionStore, assertSessionKeyAvailable } from './sessions/store.js';
+import { SessionManager } from './sessions/manager.js';
+import { Policy } from './policy/index.js';
 import { dumpError, getActiveResources } from './crash-logging.js';
 import { version } from './version.js';
 
-// Global crash handlers. Without these, an unhandled rejection from a dependency
-// (MSAL HTTP, fetch in node) kills the process silently before winston can flush.
-// Log to stderr synchronously so the dump survives.
 process.on('unhandledRejection', (reason) => {
   const dump = {
     kind: 'unhandledRejection',
@@ -35,9 +35,19 @@ process.on('uncaughtException', (err, origin) => {
 async function main(): Promise<void> {
   try {
     const args = parseArgs();
-    const authManager = await AuthManager.create();
-    const server = new MicrosoftGraphServer(authManager, args);
-    await server.initialize(version);
+    assertSessionKeyAvailable();
+    const secrets = await getSecrets();
+    const sessionStore = new SessionStore();
+    const sessionManager = new SessionManager({ store: sessionStore, secrets });
+    const policy = Policy.fromFile();
+
+    const server = new MicrosoftGraphServer({
+      options: args,
+      secrets,
+      sessionManager,
+      policy,
+    });
+    server.initialize(version);
     await server.start();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
