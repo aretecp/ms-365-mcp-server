@@ -1,9 +1,6 @@
 import type { AccountInfo, Configuration } from '@azure/msal-node';
 import { PublicClientApplication } from '@azure/msal-node';
 import logger from './logger.js';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import path from 'path';
 import { getSecrets, type AppSecrets } from './secrets.js';
 import { getCloudEndpoints, getDefaultClientId } from './cloud-config.js';
 import {
@@ -13,22 +10,7 @@ import {
   unwrapCache,
   wrapCache,
 } from './token-cache-storage.js';
-
-interface EndpointConfig {
-  pathPattern: string;
-  method: string;
-  toolName: string;
-  scopes?: string[];
-  workScopes?: string[];
-  llmTip?: string;
-  readOnly?: boolean;
-}
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const endpointsData = JSON.parse(
-  readFileSync(path.join(__dirname, 'endpoints.json'), 'utf8')
-) as EndpointConfig[];
+import { ALL_TOOLS } from './tools/index.js';
 
 function createMsalConfig(secrets: AppSecrets): Configuration {
   const cloudEndpoints = getCloudEndpoints();
@@ -40,37 +22,18 @@ function createMsalConfig(secrets: AppSecrets): Configuration {
   };
 }
 
-export function getEndpointRequiredScopes(
-  endpoint: Pick<EndpointConfig, 'scopes' | 'workScopes'> | undefined
-): string[] {
-  if (!endpoint) {
-    return [];
-  }
+/**
+ * Union of all delegated Graph scopes required by the registered Tool surface.
+ * Used to advertise `scopes_supported` in OAuth metadata and to request the
+ * right consent set at /authorize. Always includes `offline_access` so Entra
+ * issues a refresh token.
+ */
+export function resolveAuthScopes(): string[] {
   const scopes = new Set<string>();
-  if (endpoint.scopes) {
-    endpoint.scopes.forEach((scope) => scopes.add(scope));
-  }
-  if (endpoint.workScopes) {
-    endpoint.workScopes.forEach((scope) => scopes.add(scope));
+  for (const tool of ALL_TOOLS) {
+    for (const scope of tool.scopes) scopes.add(scope);
   }
   return Array.from(scopes);
-}
-
-/**
- * Union of all delegated scopes required by the current tool surface. Areté
- * operates inside one Entra tenant so we always include both personal and
- * work-account scopes for every endpoint.
- */
-export function buildScopesFromEndpoints(): string[] {
-  const scopesSet = new Set<string>();
-  for (const endpoint of endpointsData) {
-    getEndpointRequiredScopes(endpoint).forEach((scope) => scopesSet.add(scope));
-  }
-  return Array.from(scopesSet);
-}
-
-export function resolveAuthScopes(): string[] {
-  return buildScopesFromEndpoints();
 }
 
 interface AuthManagerCreateOptions {

@@ -3,7 +3,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import express, { Request, Response } from 'express';
 import logger, { enableConsoleLogging } from './logger.js';
-import { registerGraphTools } from './graph-tools.js';
+import { registerTools } from './tool-runtime.js';
 import { buildMcpServerInstructions } from './mcp-instructions.js';
 import GraphClient from './graph-client.js';
 import AuthManager, { resolveAuthScopes } from './auth.js';
@@ -84,7 +84,7 @@ class MicrosoftGraphServer {
       }
     );
 
-    registerGraphTools(
+    registerTools(
       server,
       this.graphClient!,
       this.authManager,

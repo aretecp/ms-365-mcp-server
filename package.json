@@ -8,7 +8,6 @@
     "microsoft-mcp-server": "dist/index.js"
   },
   "scripts": {
-    "generate": "node bin/generate-graph-client.mjs",
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -18,7 +17,7 @@
     "format:check": "prettier --check \"**/*.{ts,mts,js,mjs,json,md}\"",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "verify": "npm run generate && npm run lint && npm run format:check && npm run build && npm run test",
+    "verify": "npm run lint && npm run format:check && npm run build && npm run test",
     "inspector": "npx @modelcontextprotocol/inspector tsx src/index.ts"
   },
   "keywords": [
@@ -40,7 +39,6 @@
     "commander": "^11.1.0",
     "dotenv": "^17.0.1",
     "express": "^5.2.1",
-    "js-yaml": "^4.1.0",
     "open": "^11.0.0",
     "winston": "^3.17.0",
     "zod": "^3.24.2",
@@ -50,7 +48,6 @@
     "keytar": "^7.9.0"
   },
   "devDependencies": {
-    "@redocly/cli": "^2.11.1",
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^11.0.3",

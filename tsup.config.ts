@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/**/*.ts', 'src/endpoints.json'],
+  entry: ['src/**/*.ts'],
   format: ['esm'],
   target: 'es2020',
   outDir: 'dist',
@@ -12,9 +12,6 @@ export default defineConfig({
   dts: false,
   publicDir: false,
   onSuccess: process.platform === 'win32' ? undefined : 'chmod +x dist/index.js',
-  loader: {
-    '.json': 'copy',
-  },
   noExternal: [],
   external: [
     '@azure/msal-node',
@@ -22,7 +19,6 @@ export default defineConfig({
     'commander',
     'dotenv',
     'express',
-    'js-yaml',
     'keytar',
     'winston',
     'zod',

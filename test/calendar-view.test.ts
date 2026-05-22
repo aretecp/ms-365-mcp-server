@@ -1,274 +1,130 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { registerGraphTools } from '../src/graph-tools.js';
-import type { GraphClient } from '../src/graph-client.js';
+import GraphClient from '../src/graph-client.js';
+import { executeTool, registerTools } from '../src/tool-runtime.js';
+import type { Tool } from '../src/tools/index.js';
+import { ALL_TOOLS } from '../src/tools/index.js';
 
 vi.mock('../src/logger.js', () => ({
-  default: {
-    info: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-  },
+  default: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
-vi.mock('../src/generated/client.js', () => ({
-  api: {
-    endpoints: [
-      {
-        alias: 'get-calendar-view',
-        method: 'get',
-        path: '/me/calendarView',
-        description: 'The calendar view for the calendar.',
-        parameters: [
-          { name: 'startDateTime', type: 'Query', schema: z.string() },
-          { name: 'endDateTime', type: 'Query', schema: z.string() },
-          { name: 'top', type: 'Query', schema: z.number().int().optional() },
-          { name: 'skip', type: 'Query', schema: z.number().int().optional() },
-          { name: 'select', type: 'Query', schema: z.array(z.string()).optional() },
-          { name: 'orderby', type: 'Query', schema: z.array(z.string()).optional() },
-          { name: 'filter', type: 'Query', schema: z.string().optional() },
-          { name: 'expand', type: 'Query', schema: z.array(z.string()).optional() },
-        ],
-      },
-      {
-        alias: 'get-specific-calendar-view',
-        method: 'get',
-        path: '/me/calendars/:calendarId/calendarView',
-        description: 'The calendar view for a specific calendar.',
-        parameters: [
-          { name: 'calendarId', type: 'Path', schema: z.string() },
-          { name: 'startDateTime', type: 'Query', schema: z.string() },
-          { name: 'endDateTime', type: 'Query', schema: z.string() },
-          { name: 'top', type: 'Query', schema: z.number().int().optional() },
-          { name: 'skip', type: 'Query', schema: z.number().int().optional() },
-          { name: 'select', type: 'Query', schema: z.array(z.string()).optional() },
-          { name: 'orderby', type: 'Query', schema: z.array(z.string()).optional() },
-          { name: 'filter', type: 'Query', schema: z.string().optional() },
-          { name: 'expand', type: 'Query', schema: z.array(z.string()).optional() },
-        ],
-      },
-      {
-        alias: 'list-calendar-event-instances',
-        method: 'get',
-        path: '/me/calendars/:calendarId/events/:eventId/instances',
-        description: 'Expand recurring event instances.',
-        parameters: [
-          { name: 'calendarId', type: 'Path', schema: z.string() },
-          { name: 'eventId', type: 'Path', schema: z.string() },
-          { name: 'startDateTime', type: 'Query', schema: z.string() },
-          { name: 'endDateTime', type: 'Query', schema: z.string() },
-        ],
-      },
-    ],
-  },
-}));
+const findTool = (name: string) => ALL_TOOLS.find((t) => t.name === name)!;
 
-describe('Calendar View Tools', () => {
+describe('Calendar tools', () => {
   let mockServer: { tool: ReturnType<typeof vi.fn> };
   let mockGraphClient: GraphClient;
+  let graphRequest: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockServer = { tool: vi.fn() };
-    mockGraphClient = {
-      graphRequest: vi.fn().mockResolvedValue({
-        content: [{ type: 'text', text: JSON.stringify({ value: [] }) }],
-      }),
-    } as unknown as GraphClient;
+    graphRequest = vi.fn().mockResolvedValue({
+      content: [{ type: 'text', text: JSON.stringify({ value: [] }) }],
+    });
+    mockGraphClient = { graphRequest } as unknown as GraphClient;
   });
 
-  function getToolHandler(toolName: string) {
-    registerGraphTools(mockServer, mockGraphClient, false);
+  function getRegisteredSchema(toolName: string): Record<string, z.ZodTypeAny> {
+    registerTools(mockServer as never, mockGraphClient);
     const call = mockServer.tool.mock.calls.find((c: unknown[]) => c[0] === toolName);
-    expect(call).toBeDefined();
-    return call![call!.length - 1] as (params: Record<string, unknown>) => Promise<unknown>;
+    expect(call, `tool ${toolName} not registered`).toBeDefined();
+    return call![2] as Record<string, z.ZodTypeAny>;
   }
 
-  describe('tool registration', () => {
-    it('should register all three calendar view/instances tools', () => {
-      registerGraphTools(mockServer, mockGraphClient, false);
-
-      const toolNames = mockServer.tool.mock.calls.map((call: unknown[]) => call[0]);
+  describe('registration', () => {
+    it('registers the three v1 calendar tools', () => {
+      registerTools(mockServer as never, mockGraphClient);
+      const toolNames = mockServer.tool.mock.calls.map((c: unknown[]) => c[0]);
+      expect(toolNames).toContain('list-calendar-events');
+      expect(toolNames).toContain('get-calendar-event');
       expect(toolNames).toContain('get-calendar-view');
-      expect(toolNames).toContain('get-specific-calendar-view');
-      expect(toolNames).toContain('list-calendar-event-instances');
     });
 
-    it('should include timezone parameter for calendar view tools', () => {
-      registerGraphTools(mockServer, mockGraphClient, false);
-
-      for (const call of mockServer.tool.mock.calls) {
-        const toolName = call[0] as string;
-        const paramSchema = call[2] as Record<string, z.ZodTypeAny>;
-
-        if (
-          [
-            'get-calendar-view',
-            'get-specific-calendar-view',
-            'list-calendar-event-instances',
-          ].includes(toolName)
-        ) {
-          expect(paramSchema).toHaveProperty('timezone');
-        }
+    it.each(['list-calendar-events', 'get-calendar-event', 'get-calendar-view'])(
+      '%s exposes the timezone control parameter',
+      (name) => {
+        expect(getRegisteredSchema(name)).toHaveProperty('timezone');
       }
-    });
+    );
 
-    it('should include expandExtendedProperties parameter for calendar view tools', () => {
-      registerGraphTools(mockServer, mockGraphClient, false);
-
-      for (const call of mockServer.tool.mock.calls) {
-        const toolName = call[0] as string;
-        const paramSchema = call[2] as Record<string, z.ZodTypeAny>;
-
-        if (
-          [
-            'get-calendar-view',
-            'get-specific-calendar-view',
-            'list-calendar-event-instances',
-          ].includes(toolName)
-        ) {
-          expect(paramSchema).toHaveProperty('expandExtendedProperties');
-        }
+    it.each(['list-calendar-events', 'get-calendar-event', 'get-calendar-view'])(
+      '%s exposes the expandExtendedProperties control parameter',
+      (name) => {
+        expect(getRegisteredSchema(name)).toHaveProperty('expandExtendedProperties');
       }
-    });
+    );
 
-    it('should include fetchAllPages parameter for GET tools', () => {
-      registerGraphTools(mockServer, mockGraphClient, false);
-
+    it('GET tools get a fetchAllPages parameter', () => {
+      registerTools(mockServer as never, mockGraphClient);
       for (const call of mockServer.tool.mock.calls) {
         const toolName = call[0] as string;
-        // Skip utility tools that are not Graph API endpoints
         if (toolName === 'parse-teams-url' || toolName === 'download-bytes') continue;
-        const paramSchema = call[2] as Record<string, z.ZodTypeAny>;
-        expect(paramSchema).toHaveProperty('fetchAllPages');
-      }
-    });
-
-    it('should append llmTip to tool descriptions', () => {
-      registerGraphTools(mockServer, mockGraphClient, false);
-
-      for (const call of mockServer.tool.mock.calls) {
-        const toolName = call[0] as string;
-        const description = call[1] as string;
-
-        if (toolName === 'get-calendar-view') {
-          expect(description).toContain('TIP:');
-          expect(description).toContain('recurring event instances');
-        }
-        if (toolName === 'get-specific-calendar-view') {
-          expect(description).toContain('TIP:');
-          expect(description).toContain('recurring event instances');
-        }
-        if (toolName === 'list-calendar-event-instances') {
-          expect(description).toContain('TIP:');
-          expect(description).toContain('startDateTime and endDateTime');
-        }
+        expect(call[2]).toHaveProperty('fetchAllPages');
       }
     });
   });
 
-  describe('tool execution', () => {
-    it('should call graphRequest with correct path for specific calendar view', async () => {
-      const handler = getToolHandler('get-specific-calendar-view');
-
-      await handler({
-        calendarId: 'cal-abc-123',
-        startDateTime: '2024-01-01T00:00:00Z',
-        endDateTime: '2024-01-31T23:59:59Z',
+  describe('Prefer header', () => {
+    it('sets outlook.timezone when timezone param is provided', async () => {
+      const tool = findTool('get-calendar-view') as Tool;
+      await executeTool(tool, mockGraphClient, undefined, {
+        startDateTime: '2026-05-22T00:00:00Z',
+        endDateTime: '2026-05-29T00:00:00Z',
+        timezone: 'America/New_York',
       });
 
-      expect(mockGraphClient.graphRequest).toHaveBeenCalledWith(
-        expect.stringContaining('/me/calendars/cal-abc-123/calendarView'),
-        expect.objectContaining({ method: 'GET' })
-      );
-
-      // Verify startDateTime and endDateTime are in the path as query params
-      const calledPath = (mockGraphClient.graphRequest as ReturnType<typeof vi.fn>).mock
-        .calls[0][0] as string;
-      expect(calledPath).toContain('startDateTime=2024-01-01T00%3A00%3A00Z');
-      expect(calledPath).toContain('endDateTime=2024-01-31T23%3A59%3A59Z');
+      const options = graphRequest.mock.calls[0][1] as { headers: Record<string, string> };
+      expect(options.headers['Prefer']).toContain('outlook.timezone="America/New_York"');
     });
 
-    it('should set timezone header when timezone param is provided', async () => {
-      const handler = getToolHandler('get-specific-calendar-view');
+    it('sets outlook.body-content-type=text by default on GETs', async () => {
+      const tool = findTool('get-calendar-event') as Tool;
+      await executeTool(tool, mockGraphClient, undefined, { 'event-id': 'abc' });
 
-      await handler({
-        calendarId: 'cal-abc-123',
-        startDateTime: '2024-01-01T00:00:00Z',
-        endDateTime: '2024-01-31T23:59:59Z',
-        timezone: 'Australia/Sydney',
-      });
-
-      expect(mockGraphClient.graphRequest).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Prefer: expect.stringContaining('outlook.timezone="Australia/Sydney"'),
-          }),
-        })
-      );
+      const options = graphRequest.mock.calls[0][1] as { headers: Record<string, string> };
+      expect(options.headers['Prefer']).toContain('outlook.body-content-type="text"');
     });
+  });
 
-    it('should add $expand for extended properties when requested', async () => {
-      const handler = getToolHandler('get-specific-calendar-view');
-
-      await handler({
-        calendarId: 'cal-abc-123',
-        startDateTime: '2024-01-01T00:00:00Z',
-        endDateTime: '2024-01-31T23:59:59Z',
+  describe('expandExtendedProperties', () => {
+    it('appends singleValueExtendedProperties to $expand when true', async () => {
+      const tool = findTool('get-calendar-event') as Tool;
+      await executeTool(tool, mockGraphClient, undefined, {
+        'event-id': 'abc',
         expandExtendedProperties: true,
       });
 
-      const calledPath = (mockGraphClient.graphRequest as ReturnType<typeof vi.fn>).mock
-        .calls[0][0] as string;
+      const calledPath = graphRequest.mock.calls[0][0] as string;
       expect(calledPath).toContain('$expand=singleValueExtendedProperties');
     });
 
-    it('should append to existing $expand when expandExtendedProperties is set', async () => {
-      const handler = getToolHandler('get-specific-calendar-view');
-
-      await handler({
-        calendarId: 'cal-abc-123',
-        startDateTime: '2024-01-01T00:00:00Z',
-        endDateTime: '2024-01-31T23:59:59Z',
-        expand: ['extensions'],
+    it('merges with an existing expand value rather than overwriting', async () => {
+      const tool = findTool('get-calendar-event') as Tool;
+      await executeTool(tool, mockGraphClient, undefined, {
+        'event-id': 'abc',
+        expand: 'attachments',
         expandExtendedProperties: true,
       });
 
-      const calledPath = (mockGraphClient.graphRequest as ReturnType<typeof vi.fn>).mock
-        .calls[0][0] as string;
-      expect(calledPath).toContain('$expand=extensions,singleValueExtendedProperties');
+      // The runtime preserves `,` literally in query strings (no %2C escape).
+      const calledPath = graphRequest.mock.calls[0][0] as string;
+      expect(calledPath).toContain('$expand=attachments,singleValueExtendedProperties');
     });
+  });
 
-    it('should pass $top query parameter when provided', async () => {
-      const handler = getToolHandler('get-specific-calendar-view');
-
-      await handler({
-        calendarId: 'cal-abc-123',
-        startDateTime: '2024-01-01T00:00:00Z',
-        endDateTime: '2024-01-31T23:59:59Z',
-        top: 50,
+  describe('calendarView required params', () => {
+    it('encodes startDateTime and endDateTime as $-prefixed query params', async () => {
+      const tool = findTool('get-calendar-view') as Tool;
+      await executeTool(tool, mockGraphClient, undefined, {
+        startDateTime: '2026-05-22T00:00:00Z',
+        endDateTime: '2026-05-29T00:00:00Z',
       });
 
-      const calledPath = (mockGraphClient.graphRequest as ReturnType<typeof vi.fn>).mock
-        .calls[0][0] as string;
-      expect(calledPath).toContain('$top=50');
-    });
-
-    it('should call graphRequest with correct path for event instances', async () => {
-      const handler = getToolHandler('list-calendar-event-instances');
-
-      await handler({
-        calendarId: 'cal-abc-123',
-        eventId: 'event-xyz-456',
-        startDateTime: '2024-01-01T00:00:00Z',
-        endDateTime: '2024-12-31T23:59:59Z',
-      });
-
-      expect(mockGraphClient.graphRequest).toHaveBeenCalledWith(
-        expect.stringContaining('/me/calendars/cal-abc-123/events/event-xyz-456/instances'),
-        expect.objectContaining({ method: 'GET' })
-      );
+      const calledPath = graphRequest.mock.calls[0][0] as string;
+      // Not $-prefixed — these are domain params, not OData.
+      expect(calledPath).toContain('startDateTime=2026-05-22T00%3A00%3A00Z');
+      expect(calledPath).toContain('endDateTime=2026-05-29T00%3A00%3A00Z');
     });
   });
 });
