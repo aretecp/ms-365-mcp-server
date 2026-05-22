@@ -16,23 +16,9 @@ vi.mock('../src/cloud-config.js', () => ({
   }),
 }));
 
-vi.mock('../src/lib/microsoft-auth.js', () => ({
-  refreshAccessToken: vi.fn(),
-}));
-
 vi.mock('@toon-format/toon', () => ({
-  encode: (data: any) => JSON.stringify(data),
+  encode: (data: unknown) => JSON.stringify(data),
 }));
-
-const mockAuthManager = {
-  getToken: vi.fn().mockResolvedValue('mock-token'),
-};
-
-const mockSecrets = {
-  clientId: 'test-client-id',
-  tenantId: 'test-tenant-id',
-  clientSecret: 'test-client-secret',
-};
 
 const { default: GraphClient } = await import('../src/graph-client.js');
 
@@ -41,7 +27,7 @@ describe('OData nextLink preservation', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    graphClient = new GraphClient(mockAuthManager as any, mockSecrets);
+    graphClient = new GraphClient('json');
   });
 
   it('should preserve @odata.nextLink in response while removing other @odata properties', async () => {
@@ -57,7 +43,7 @@ describe('OData nextLink preservation', () => {
       )
     );
 
-    const result = await graphClient.graphRequest('/me/messages');
+    const result = await graphClient.graphRequest('/me/messages', { accessToken: 'mock-token' });
     const parsed = JSON.parse(result.content[0].text);
 
     expect(parsed['@odata.nextLink']).toBe('https://graph.microsoft.com/v1.0/me/messages?$skip=10');
@@ -78,7 +64,7 @@ describe('OData nextLink preservation', () => {
       )
     );
 
-    const result = await graphClient.graphRequest('/me/messages');
+    const result = await graphClient.graphRequest('/me/messages', { accessToken: 'mock-token' });
     const parsed = JSON.parse(result.content[0].text);
 
     expect(parsed['@odata.nextLink']).toBeUndefined();

@@ -1,7 +1,5 @@
 import { z } from 'zod';
 import type GraphClient from '../graph-client.js';
-import type AuthManager from '../auth.js';
-import { getRequestTokens } from '../request-context.js';
 import { parseTeamsUrl } from '../lib/teams-url-parser.js';
 
 type ContentItem = { type: 'text'; text: string; [key: string]: unknown };
@@ -15,9 +13,6 @@ export interface CallToolResult {
 
 export interface UtilityToolContext {
   graphClient: GraphClient;
-  authManager?: AuthManager;
-  multiAccount: boolean;
-  accountNames: string[];
 }
 
 /**
@@ -78,32 +73,20 @@ export const utilityTools: readonly UtilityTool[] = [
       'Download binary content from Microsoft Graph and return it as base64. Single tool for any binary read: drive file content, mail attachment, profile photo, Teams hosted content. Returns { contentType, encoding: "base64", contentLength, contentBytes }.',
     readOnlyHint: true,
     openWorldHint: true,
-    buildSchema: (ctx) => {
-      const schema: Record<string, z.ZodTypeAny> = {
-        target: z
-          .string()
-          .describe(
-            'Relative Microsoft Graph path starting with "/". Common paths: ' +
-              '/me/drive/items/{driveItem-id}/content (OneDrive file content); ' +
-              '/me/messages/{message-id}/attachments/{attachment-id}/$value (mail attachment, list-mail-attachments returns the IDs); ' +
-              '/me/photo/$value or /users/{user-id}/photo/$value (profile photo); ' +
-              '/chats/{chat-id}/messages/{chatMessage-id}/hostedContents/{chatMessageHostedContent-id}/$value (Teams chat hosted content); ' +
-              '/teams/{team-id}/channels/{channel-id}/messages/{chatMessage-id}/hostedContents/{chatMessageHostedContent-id}/$value (Teams channel hosted content).'
-          ),
-      };
-      if (ctx.multiAccount) {
-        schema['account'] = z
-          .string()
-          .optional()
-          .describe(
-            'Account to use when multiple Microsoft accounts are configured. Required when multiple accounts exist (see list-accounts).'
-          );
-      }
-      return schema;
-    },
-    execute: async (params, { graphClient, authManager }) => {
+    buildSchema: () => ({
+      target: z
+        .string()
+        .describe(
+          'Relative Microsoft Graph path starting with "/". Common paths: ' +
+            '/me/drive/items/{driveItem-id}/content (OneDrive file content); ' +
+            '/me/messages/{message-id}/attachments/{attachment-id}/$value (mail attachment, list-mail-attachments returns the IDs); ' +
+            '/me/photo/$value or /users/{user-id}/photo/$value (profile photo); ' +
+            '/chats/{chat-id}/messages/{chatMessage-id}/hostedContents/{chatMessageHostedContent-id}/$value (Teams chat hosted content); ' +
+            '/teams/{team-id}/channels/{channel-id}/messages/{chatMessage-id}/hostedContents/{chatMessageHostedContent-id}/$value (Teams channel hosted content).'
+        ),
+    }),
+    execute: async (params, { graphClient }) => {
       const target = params.target;
-      const accountParam = params.account as string | undefined;
       if (typeof target !== 'string' || target.length === 0) {
         return {
           content: [
@@ -130,11 +113,7 @@ export const utilityTools: readonly UtilityTool[] = [
         };
       }
       try {
-        let accountAccessToken: string | undefined;
-        if (authManager && !authManager.isOAuthModeEnabled() && !getRequestTokens()) {
-          accountAccessToken = await authManager.getTokenForAccount(accountParam);
-        }
-        return await graphClient.graphRequest(target, { accessToken: accountAccessToken });
+        return await graphClient.graphRequest(target);
       } catch (error) {
         return {
           content: [{ type: 'text', text: JSON.stringify({ error: (error as Error).message }) }],

@@ -19,7 +19,6 @@ export default defineConfig({
     'commander',
     'dotenv',
     'express',
-    'keytar',
     'winston',
     'zod',
   ],

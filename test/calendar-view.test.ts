@@ -68,7 +68,7 @@ describe('Calendar tools', () => {
   describe('Prefer header', () => {
     it('sets outlook.timezone when timezone param is provided', async () => {
       const tool = findTool('get-calendar-view') as Tool;
-      await executeTool(tool, mockGraphClient, undefined, {
+      await executeTool(tool, mockGraphClient, {
         startDateTime: '2026-05-22T00:00:00Z',
         endDateTime: '2026-05-29T00:00:00Z',
         timezone: 'America/New_York',
@@ -80,7 +80,7 @@ describe('Calendar tools', () => {
 
     it('sets outlook.body-content-type=text by default on GETs', async () => {
       const tool = findTool('get-calendar-event') as Tool;
-      await executeTool(tool, mockGraphClient, undefined, { 'event-id': 'abc' });
+      await executeTool(tool, mockGraphClient, { 'event-id': 'abc' });
 
       const options = graphRequest.mock.calls[0][1] as { headers: Record<string, string> };
       expect(options.headers['Prefer']).toContain('outlook.body-content-type="text"');
@@ -90,7 +90,7 @@ describe('Calendar tools', () => {
   describe('expandExtendedProperties', () => {
     it('appends singleValueExtendedProperties to $expand when true', async () => {
       const tool = findTool('get-calendar-event') as Tool;
-      await executeTool(tool, mockGraphClient, undefined, {
+      await executeTool(tool, mockGraphClient, {
         'event-id': 'abc',
         expandExtendedProperties: true,
       });
@@ -101,7 +101,7 @@ describe('Calendar tools', () => {
 
     it('merges with an existing expand value rather than overwriting', async () => {
       const tool = findTool('get-calendar-event') as Tool;
-      await executeTool(tool, mockGraphClient, undefined, {
+      await executeTool(tool, mockGraphClient, {
         'event-id': 'abc',
         expand: 'attachments',
         expandExtendedProperties: true,
@@ -116,7 +116,7 @@ describe('Calendar tools', () => {
   describe('calendarView required params', () => {
     it('encodes startDateTime and endDateTime as $-prefixed query params', async () => {
       const tool = findTool('get-calendar-view') as Tool;
-      await executeTool(tool, mockGraphClient, undefined, {
+      await executeTool(tool, mockGraphClient, {
         startDateTime: '2026-05-22T00:00:00Z',
         endDateTime: '2026-05-29T00:00:00Z',
       });

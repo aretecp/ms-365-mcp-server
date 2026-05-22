@@ -30,7 +30,7 @@ describe('Path parameter encoding (issue #245)', () => {
     const base64Id =
       'AAMkADE5NGJlYmU2LWIyZDItNGE3Ni04NjRiLTYxMDUwMDE2NDYzYgBGAAAAAAAweYIkG8t7T4BnY_vowazSBwCrNxh3sVpPTqkhqlJPyPJrAAAAAAENAACrNxh3sVpPTqkhqlJPyPJrAABx2DQOAAA=';
 
-    await executeTool(getMailMessage, mockGraphClient, undefined, { 'message-id': base64Id });
+    await executeTool(getMailMessage, mockGraphClient, { 'message-id': base64Id });
 
     const calledPath = graphRequest.mock.calls[0][0] as string;
     expect(calledPath).toContain(`/me/messages/${base64Id}`);
@@ -40,7 +40,7 @@ describe('Path parameter encoding (issue #245)', () => {
   it('preserves = with double padding', async () => {
     const idWithDoublePad = 'SomeBase64EncodedId==';
 
-    await executeTool(getMailMessage, mockGraphClient, undefined, {
+    await executeTool(getMailMessage, mockGraphClient, {
       'message-id': idWithDoublePad,
     });
 
@@ -52,7 +52,7 @@ describe('Path parameter encoding (issue #245)', () => {
   it('still encodes truly unsafe characters in path parameters', async () => {
     const idWithSpace = 'some id with spaces';
 
-    await executeTool(getCalendarEvent, mockGraphClient, undefined, { 'event-id': idWithSpace });
+    await executeTool(getCalendarEvent, mockGraphClient, { 'event-id': idWithSpace });
 
     const calledPath = graphRequest.mock.calls[0][0] as string;
     expect(calledPath).toContain('some%20id%20with%20spaces');

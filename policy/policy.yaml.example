@@ -1,0 +1,47 @@
+# Areté Microsoft 365 MCP Server policy.
+#
+# Schema:
+#   defaults.allow:  list of tools every authenticated user may call
+#   users.<upn>.allow: extra tools allowed for a specific Entra user
+#   users.<upn>.deny:  tools explicitly denied for a specific user (wins over allow)
+#
+# Precedence: user.deny > user.allow > defaults.allow > default-deny.
+# Unknown users fall through to defaults.allow.
+
+defaults:
+  allow:
+    # Mail (read)
+    - list-mail-messages
+    - get-mail-message
+    - list-mail-folders
+    - list-mail-folder-messages
+    - list-mail-attachments
+
+    # Calendar (read)
+    - list-calendar-events
+    - get-calendar-event
+    - get-calendar-view
+
+    # Files / OneDrive (read)
+    - get-drive-root-item
+    - list-folder-files
+    - get-drive-item
+
+    # Identity
+    - get-me
+
+    # Utilities
+    - download-bytes
+    - parse-teams-url
+
+# Example per-user overrides. The keys are Entra userPrincipalNames.
+#
+# users:
+#   spencer@areteintelligence.com:
+#     allow:
+#       - create-draft-email
+#       - update-mail-message
+#       - send-draft-message
+#   contractor@example.com:
+#     deny:
+#       - download-bytes

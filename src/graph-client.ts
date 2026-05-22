@@ -1,9 +1,7 @@
 import logger from './logger.js';
-import AuthManager from './auth.js';
 import { encode as toonEncode } from '@toon-format/toon';
-import type { AppSecrets } from './secrets.js';
 import { getCloudEndpoints } from './cloud-config.js';
-import { getRequestTokens } from './request-context.js';
+import { getRequestContext } from './request-context.js';
 
 /**
  * Returns true if the given HTTP Content-Type header indicates a binary
@@ -69,27 +67,19 @@ interface McpResponse {
 }
 
 class GraphClient {
-  private authManager: AuthManager;
-  private secrets: AppSecrets;
   private readonly outputFormat: 'json' | 'toon' = 'json';
 
-  constructor(
-    authManager: AuthManager,
-    secrets: AppSecrets,
-    outputFormat: 'json' | 'toon' = 'json'
-  ) {
-    this.authManager = authManager;
-    this.secrets = secrets;
+  constructor(outputFormat: 'json' | 'toon' = 'json') {
     this.outputFormat = outputFormat;
   }
 
   async makeRequest(endpoint: string, options: GraphRequestOptions = {}): Promise<unknown> {
-    const contextTokens = getRequestTokens();
-    const accessToken =
-      options.accessToken ?? contextTokens?.accessToken ?? (await this.authManager.getToken());
+    const accessToken = options.accessToken ?? getRequestContext()?.accessToken;
 
     if (!accessToken) {
-      throw new Error('No access token available');
+      throw new Error(
+        'No access token available — call must run inside a request with a valid session.'
+      );
     }
 
     try {
