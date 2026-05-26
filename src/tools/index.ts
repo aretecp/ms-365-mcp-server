@@ -3,6 +3,7 @@ import { mailTools } from './mail.js';
 import { calendarTools } from './calendar.js';
 import { filesTools } from './files.js';
 import { identityTools } from './identity.js';
+import { teamsTools } from './teams.js';
 
 export type { Tool, ToolParam, ParamLocation } from './types.js';
 export { OData, ODATA_PARAM_NAMES } from './types.js';
@@ -23,4 +24,5 @@ export const ALL_TOOLS: readonly Tool[] = [
   ...calendarTools,
   ...filesTools,
   ...identityTools,
+  ...teamsTools,
 ];

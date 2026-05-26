@@ -43,6 +43,20 @@ defaults:
     # Identity
     - get-me
 
+    # Teams (read)
+    - list-chats
+    - get-chat
+    - list-chat-messages
+    - get-chat-message
+    - list-joined-teams
+    - list-team-channels
+    - list-channel-messages
+    - get-channel-message
+    - list-channel-message-replies
+    - find-online-meeting
+    - get-online-meeting
+    - list-meeting-transcripts
+
     # Utilities
     - download-bytes
     - parse-teams-url
@@ -62,6 +76,13 @@ defaults:
 #       - create-calendar-event
 #       - update-calendar-event
 #       - delete-calendar-event
+#       # Teams writes
+#       - send-chat-message
+#       - send-channel-message
+#       - send-channel-message-reply
+#       - create-online-meeting
+#       - update-online-meeting
+#       - delete-online-meeting
 #
 #   readonly-bot@areteintelligence.com:
 #     deny:
