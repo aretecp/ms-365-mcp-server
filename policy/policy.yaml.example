@@ -43,6 +43,20 @@ defaults:
     # Identity
     - get-me
 
+    # Users (directory lookup)
+    - list-users
+    - get-user
+
+    # SharePoint (read)
+    - list-sites
+    - get-site
+    - list-site-drives
+    - list-drive-root-children
+    - list-drive-folder-children
+    - get-drive-item-by-id
+    - list-site-lists
+    - list-site-list-items
+
     # Teams (read)
     - list-chats
     - get-chat

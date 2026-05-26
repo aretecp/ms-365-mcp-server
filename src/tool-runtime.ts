@@ -100,6 +100,13 @@ async function executeTool(
     const headers: Record<string, string> = {};
     let body: unknown = null;
 
+    // Apply the tool's hard-coded request headers first; any header passed
+    // through a ToolParam (location: 'header') in the params loop below will
+    // override these by overwriting the same key.
+    if (tool.requestHeaders) {
+      for (const [k, v] of Object.entries(tool.requestHeaders)) headers[k] = v;
+    }
+
     for (const [paramName, paramValue] of Object.entries(params)) {
       if (CONTROL_PARAM_NAMES.has(paramName)) continue;
 

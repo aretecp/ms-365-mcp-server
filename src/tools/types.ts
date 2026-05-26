@@ -67,6 +67,15 @@ export interface Tool {
   /** Names of path params whose values must NOT be URL-encoded (function-style API calls). */
   skipEncoding?: string[];
   /**
+   * Hard-coded request headers always sent on this tool's request. Used for
+   * endpoints that require a fixed header — e.g. `ConsistencyLevel: eventual`
+   * on `/users` to enable `$search` / advanced `$filter`.
+   *
+   * Tool-param headers (location: 'header') still override these, since the
+   * params loop runs after the requestHeaders are applied.
+   */
+  requestHeaders?: Record<string, string>;
+  /**
    * Marks a POST endpoint as logically read-only (e.g. `find-meeting-times`).
    * Reserved for a future read-only-mode toggle; ignored by the v1 runtime.
    */

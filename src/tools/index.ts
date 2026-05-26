@@ -4,6 +4,8 @@ import { calendarTools } from './calendar.js';
 import { filesTools } from './files.js';
 import { identityTools } from './identity.js';
 import { teamsTools } from './teams.js';
+import { usersTools } from './users.js';
+import { sharepointTools } from './sharepoint.js';
 
 export type { Tool, ToolParam, ParamLocation } from './types.js';
 export { OData, ODATA_PARAM_NAMES } from './types.js';
@@ -25,4 +27,6 @@ export const ALL_TOOLS: readonly Tool[] = [
   ...filesTools,
   ...identityTools,
   ...teamsTools,
+  ...usersTools,
+  ...sharepointTools,
 ];

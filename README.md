@@ -11,8 +11,9 @@ Hand-written tool surface. Currently exposing:
 - **Mail**: read + draft + send + delete (Outlook).
 - **Calendar**: read + create + update + delete events.
 - **Files (OneDrive)**: read-only.
+- **SharePoint**: sites, document libraries, lists — read-only.
 - **Teams**: chats, channels (read + send), online meetings (find + create + update + delete), transcripts (read).
-- **Identity**: `get-me`.
+- **Directory**: `get-me`, `list-users`, `get-user`.
 - **Utilities**: `download-bytes`, `parse-teams-url`.
 
 Per-user OAuth sessions in SQLite. Per-user, per-tool policy in YAML with admin UI + SIGHUP reload. HTTP transport only.
@@ -49,6 +50,8 @@ Delegated permissions needed for the full v1.5 surface. **Bold scopes need admin
 - Mail: `Mail.Read`, `Mail.ReadWrite`, `Mail.Send`
 - Calendar: `Calendars.Read`, `Calendars.ReadWrite`
 - Files: `Files.Read`
+- Directory: **`User.ReadBasic.All`**
+- SharePoint: **`Sites.Read.All`**
 - Teams chats: `Chat.ReadBasic`, `Chat.Read`, `ChatMessage.Send`
 - Teams channels: **`Team.ReadBasic.All`**, **`Channel.ReadBasic.All`**, **`ChannelMessage.Read.All`**, **`ChannelMessage.Send`**
 - Online meetings: `OnlineMeetings.Read`, `OnlineMeetings.ReadWrite`, **`OnlineMeetingTranscript.Read.All`**
