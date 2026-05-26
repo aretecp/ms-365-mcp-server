@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express, { Request, Response } from 'express';
+import cookieParser from 'cookie-parser';
 import logger, { enableConsoleLogging } from './logger.js';
 import { registerTools } from './tool-runtime.js';
 import { buildMcpServerInstructions } from './mcp-instructions.js';
@@ -19,7 +20,8 @@ import { requestContext } from './request-context.js';
 import { PkceStore } from './oauth/pkce-store.js';
 import type { SessionManager } from './sessions/manager.js';
 import { sessionAuth, type AuthenticatedRequest } from './middleware/session-auth.js';
-import type { Policy } from './policy/index.js';
+import type { PolicyManager } from './policy/index.js';
+import { buildAdminRouter } from './admin/router.js';
 
 /**
  * Parse HTTP option into host and port components.
@@ -47,14 +49,16 @@ export interface MicrosoftGraphServerDeps {
   options: CommandOptions;
   secrets: AppSecrets;
   sessionManager: SessionManager;
-  policy: Policy;
+  policy: PolicyManager;
+  policyAdmins: Set<string>;
 }
 
 class MicrosoftGraphServer {
   private readonly options: CommandOptions;
   private readonly secrets: AppSecrets;
   private readonly sessionManager: SessionManager;
-  private readonly policy: Policy;
+  private readonly policy: PolicyManager;
+  private readonly policyAdmins: Set<string>;
   private readonly graphClient: GraphClient;
   private readonly pkceStore = new PkceStore();
   private version: string = '0.0.0';
@@ -64,6 +68,7 @@ class MicrosoftGraphServer {
     this.secrets = deps.secrets;
     this.sessionManager = deps.sessionManager;
     this.policy = deps.policy;
+    this.policyAdmins = deps.policyAdmins;
     this.graphClient = new GraphClient(this.options.toon ? 'toon' : 'json');
   }
 
@@ -112,6 +117,7 @@ class MicrosoftGraphServer {
     app.set('trust proxy', true);
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
+    app.use(cookieParser());
 
     const corsOrigin = process.env.MS365_MCP_CORS_ORIGIN || 'http://localhost:3000';
     app.use((req, res, next) => {
@@ -131,6 +137,17 @@ class MicrosoftGraphServer {
     // Public URL for browser-facing OAuth redirects when behind a reverse proxy.
     const publicUrlRaw = this.options.publicUrl || process.env.MS365_MCP_PUBLIC_URL || null;
     const publicBase = publicUrlRaw ? new URL(publicUrlRaw).href.replace(/\/$/, '') : null;
+
+    app.use(
+      '/admin',
+      buildAdminRouter({
+        sessionManager: this.sessionManager,
+        policyManager: this.policy,
+        policyAdmins: this.policyAdmins,
+        secrets: this.secrets,
+        publicBase,
+      })
+    );
 
     app.get('/.well-known/oauth-authorization-server', (req, res) => {
       const protocol = req.secure ? 'https' : 'http';

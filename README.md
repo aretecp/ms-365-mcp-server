@@ -65,8 +65,21 @@ Environment variables:
 - `MS365_MCP_OUTPUT_FORMAT=toon` — alternative to `--toon`.
 - `MS365_MCP_MAX_TOP=<n>` — hard cap on Graph `$top` for list requests.
 - `MS365_MCP_BODY_FORMAT=html` — return email bodies as HTML instead of plain text (default: text).
-- `MS365_MCP_TOKEN_CACHE_PATH`, `MS365_MCP_SELECTED_ACCOUNT_PATH` — file-based fallback locations for the MSAL token cache. Replaced by SQLite-backed per-user sessions in PR 3.
+- `MS365_MCP_POLICY_PATH` — override the default `./policy/policy.yaml` location.
+- `MS365_MCP_POLICY_ADMINS` — **required** comma-separated list of UPNs allowed to access the admin UI at `/admin/login`. Server refuses to start if empty.
 - `LOG_LEVEL`, `SILENT`.
+
+## Admin UI
+
+Operators with a UPN listed in `MS365_MCP_POLICY_ADMINS` can manage `policy/policy.yaml` through a browser. Visit `https://<host>/admin/login`, complete the Microsoft sign-in, edit the YAML, save. The save is atomic and the live policy reloads in-process — no restart, signed-in MCP users keep their sessions.
+
+For operators who prefer the CLI, edits to the file directly are picked up by sending **SIGHUP** to the server process:
+
+```bash
+kill -HUP $(pidof microsoft-mcp-server)
+```
+
+Failed reloads (bad YAML, validation error) are logged and the previously-loaded policy stays active — a typo never takes the server down.
 
 ## Output formats
 

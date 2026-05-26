@@ -12,6 +12,14 @@
 # point of the policy file: a misconfiguration shouldn't grant blanket send/
 # update/delete authority across the tenant. Add a `users.<upn>.allow` block
 # for each operator who needs write access.
+#
+# Reloading:
+#   - Edits via the admin UI at /admin/login reload automatically.
+#   - Edits to this file on disk are picked up on SIGHUP:
+#       kill -HUP $(pidof microsoft-mcp-server)
+#   - Parse errors are logged; the previously-loaded policy stays active.
+#   - The admin UI is gated by the MS365_MCP_POLICY_ADMINS env var
+#     (comma-separated UPNs), independent of this file.
 
 defaults:
   allow:
