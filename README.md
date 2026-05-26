@@ -6,18 +6,21 @@ Originally forked from [Softeria/ms-365-mcp-server](https://github.com/Softeria/
 
 ## Status
 
-In active rewrite. Tracking:
+Hand-written tool surface. Currently exposing:
 
-- **v1 (in progress)**: HTTP-only transport, per-user OAuth sessions, read-only mail/calendar/files.
-- **v1.x**: write tools for email drafts and calendar events, gated by per-user policy.
-- **v1.5**: SharePoint and Teams expansion.
+- **Mail**: read + draft + send + delete (Outlook).
+- **Calendar**: read + create + update + delete events.
+- **Files (OneDrive)**: read-only.
+- **Teams**: chats, channels (read + send), online meetings (find + create + update + delete), transcripts (read).
+- **Identity**: `get-me`.
+- **Utilities**: `download-bytes`, `parse-teams-url`.
 
-See `/Users/sglyon/.claude/plans/sorted-swinging-wind.md` for the rewrite plan.
+Per-user OAuth sessions in SQLite. Per-user, per-tool policy in YAML with admin UI + SIGHUP reload. HTTP transport only.
 
 ## Requirements
 
 - Node.js 24+
-- An Entra ID app registration in your tenant (delegated permissions only).
+- An Entra ID app registration in your tenant (delegated permissions only). Several Teams scopes require admin consent — see **Entra app setup** below.
 
 ## Quick start (development)
 
@@ -28,13 +31,29 @@ MS365_MCP_CLIENT_ID=<your Entra app client ID>
 MS365_MCP_TENANT_ID=<your tenant ID>
 # Optional confidential-client secret
 MS365_MCP_CLIENT_SECRET=<secret if used>
+MS365_MCP_SESSION_KEY=<openssl rand -base64 32>
+MS365_MCP_POLICY_ADMINS=<your UPN>
 EOF
 
-# Install + run
+cp policy/policy.yaml.example policy/policy.yaml
+
 npm install
-npm run generate   # one-time: download Graph OpenAPI, generate client (removed in PR 2)
 npm run dev:http   # binds 127.0.0.1:3000
 ```
+
+## Entra app setup
+
+Delegated permissions needed for the full v1.5 surface. **Bold scopes need admin consent** on the Entra app registration:
+
+- `User.Read`, `offline_access` (silently injected)
+- Mail: `Mail.Read`, `Mail.ReadWrite`, `Mail.Send`
+- Calendar: `Calendars.Read`, `Calendars.ReadWrite`
+- Files: `Files.Read`
+- Teams chats: `Chat.ReadBasic`, `Chat.Read`, `ChatMessage.Send`
+- Teams channels: **`Team.ReadBasic.All`**, **`Channel.ReadBasic.All`**, **`ChannelMessage.Read.All`**, **`ChannelMessage.Send`**
+- Online meetings: `OnlineMeetings.Read`, `OnlineMeetings.ReadWrite`, **`OnlineMeetingTranscript.Read.All`**
+
+After granting consent, users will see a single consent prompt on first sign-in covering everything they're authorized to use.
 
 Point an MCP client (Claude Desktop, MCP Inspector, etc.) at `http://localhost:3000/mcp`. The server handles OAuth discovery via `/.well-known/oauth-authorization-server` and `/authorize` + `/token` endpoints, then accepts `Authorization: Bearer <token>` on `/mcp`.
 
