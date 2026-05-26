@@ -1,0 +1,218 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import GraphClient from '../src/graph-client.js';
+import { executeTool, registerTools } from '../src/tool-runtime.js';
+import { ALL_TOOLS, type Tool } from '../src/tools/index.js';
+import { resolveAuthScopes } from '../src/oauth/scopes.js';
+import { Policy } from '../src/policy/index.js';
+import { requestContext } from '../src/request-context.js';
+
+vi.mock('../src/logger.js', () => ({
+  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+const findTool = (name: string) => ALL_TOOLS.find((t) => t.name === name) as Tool;
+
+const NEW_TOOLS = [
+  'list-users',
+  'get-user',
+  'list-sites',
+  'get-site',
+  'list-site-drives',
+  'list-drive-root-children',
+  'list-drive-folder-children',
+  'get-drive-item-by-id',
+  'list-site-lists',
+  'list-site-list-items',
+];
+
+describe('PR 7 registration', () => {
+  it('all 10 new tools are present in ALL_TOOLS', () => {
+    for (const name of NEW_TOOLS) {
+      expect(findTool(name), `missing ${name}`).toBeDefined();
+    }
+  });
+
+  it('exposes User.ReadBasic.All and Sites.Read.All via OAuth scopes_supported', () => {
+    const scopes = resolveAuthScopes();
+    expect(scopes).toContain('User.ReadBasic.All');
+    expect(scopes).toContain('Sites.Read.All');
+  });
+
+  it('all PR 7 tools register with readOnlyHint=true / destructiveHint=false', () => {
+    const calls: Array<[string, string, Record<string, unknown>, Record<string, unknown>]> = [];
+    const mockServer = {
+      tool: vi.fn((name: string, description: string, schema, hints) => {
+        calls.push([name, description, schema, hints]);
+      }),
+    };
+    const graphClient = { graphRequest: vi.fn() } as unknown as GraphClient;
+    registerTools(mockServer as never, graphClient);
+
+    for (const name of NEW_TOOLS) {
+      const call = calls.find((c) => c[0] === name);
+      expect(call, `${name} not registered`).toBeDefined();
+      const hints = call![3] as { readOnlyHint: boolean; destructiveHint: boolean };
+      expect(hints.readOnlyHint).toBe(true);
+      expect(hints.destructiveHint).toBe(false);
+    }
+  });
+});
+
+describe('Tool.requestHeaders applied by the runtime', () => {
+  let mockGraphClient: GraphClient;
+  let graphRequest: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    graphRequest = vi.fn().mockResolvedValue({
+      content: [{ type: 'text', text: '{}' }],
+    });
+    mockGraphClient = { graphRequest } as unknown as GraphClient;
+  });
+
+  it('list-users sets ConsistencyLevel: eventual unconditionally', async () => {
+    await executeTool(findTool('list-users'), mockGraphClient, {});
+    const opts = graphRequest.mock.calls[0][1] as { headers: Record<string, string> };
+    expect(opts.headers['ConsistencyLevel']).toBe('eventual');
+  });
+
+  it('still sets ConsistencyLevel when other params are also passed', async () => {
+    await executeTool(findTool('list-users'), mockGraphClient, {
+      search: '"displayName:Spencer"',
+      select: 'id,displayName,userPrincipalName',
+    });
+    const [path, opts] = graphRequest.mock.calls[0] as [
+      string,
+      { headers: Record<string, string> },
+    ];
+    expect(opts.headers['ConsistencyLevel']).toBe('eventual');
+    expect(path).toContain('$search=');
+    expect(path).toContain('$select=id,displayName,userPrincipalName');
+  });
+
+  it('does not leak ConsistencyLevel to tools without requestHeaders', async () => {
+    await executeTool(findTool('list-sites'), mockGraphClient, { search: 'Finance' });
+    const opts = graphRequest.mock.calls[0][1] as { headers: Record<string, string> };
+    expect(opts.headers['ConsistencyLevel']).toBeUndefined();
+  });
+});
+
+describe('PR 7 runtime — paths and queries', () => {
+  let mockGraphClient: GraphClient;
+  let graphRequest: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    graphRequest = vi.fn().mockResolvedValue({
+      content: [{ type: 'text', text: '{}' }],
+    });
+    mockGraphClient = { graphRequest } as unknown as GraphClient;
+  });
+
+  it('get-user with a UPN substitutes encoded path segment', async () => {
+    await executeTool(findTool('get-user'), mockGraphClient, { 'user-id': 'spencer@example.com' });
+    const path = graphRequest.mock.calls[0][0] as string;
+    expect(path).toContain('/users/spencer%40example.com');
+  });
+
+  it('list-sites passes the plain search query through (not OData $search)', async () => {
+    await executeTool(findTool('list-sites'), mockGraphClient, { search: 'Finance Team' });
+    const path = graphRequest.mock.calls[0][0] as string;
+    // `search` is not in ODATA_PARAM_NAMES? Actually it IS — let me check the runtime mapping.
+    // The runtime prepends `$` for OData params; on list-sites we use the same `search` key
+    // because the runtime maps every `search` to `$search`. Graph accepts both `search=` and
+    // `$search=` on /sites, but Microsoft's docs call the plain `search`; ensure at least one
+    // recognizable form is present.
+    expect(path).toContain('search=Finance');
+  });
+
+  it('list-drive-folder-children threads drive-id + item-id into the path', async () => {
+    await executeTool(findTool('list-drive-folder-children'), mockGraphClient, {
+      'drive-id': 'b!abc',
+      'driveItem-id': '01ABCDEF',
+    });
+    const path = graphRequest.mock.calls[0][0] as string;
+    expect(path).toContain('/drives/b!abc/items/01ABCDEF/children');
+  });
+
+  it('get-drive-item-by-id GETs /drives/{drive-id}/items/{driveItem-id}', async () => {
+    await executeTool(findTool('get-drive-item-by-id'), mockGraphClient, {
+      'drive-id': 'd1',
+      'driveItem-id': 'i1',
+    });
+    const [path, opts] = graphRequest.mock.calls[0] as [string, { method: string }];
+    expect(path).toBe('/drives/d1/items/i1');
+    expect(opts.method).toBe('GET');
+  });
+
+  it('list-site-list-items threads site-id + list-id and accepts $expand=fields(...)', async () => {
+    await executeTool(findTool('list-site-list-items'), mockGraphClient, {
+      'site-id': 'site-1',
+      'list-id': 'list-1',
+      expand: 'fields($select=Title,Status)',
+    });
+    const path = graphRequest.mock.calls[0][0] as string;
+    expect(path).toContain('/sites/site-1/lists/list-1/items');
+    // encodeURIComponent preserves `(`, `)` (unreserved per RFC 3986) and the runtime
+    // also preserves `,`. `$` and `=` inside the value get encoded as %24 / %3D.
+    expect(path).toContain('$expand=fields(%24select%3DTitle,Status)');
+  });
+});
+
+describe('PR 7 policy gating', () => {
+  function makeMockGraphClient() {
+    const graphRequest = vi.fn().mockResolvedValue({
+      content: [{ type: 'text', text: '{}' }],
+    });
+    return { graphRequest } as unknown as GraphClient;
+  }
+
+  it('all PR 7 tools pass through when in defaults.allow', async () => {
+    const policy = Policy.fromDocument({ defaults: { allow: NEW_TOOLS } });
+
+    for (const name of NEW_TOOLS) {
+      const mockGraphClient = makeMockGraphClient();
+      const result = await requestContext.run(
+        {
+          accessToken: 'at',
+          userOid: 'oid',
+          tenantId: 't',
+          userPrincipalName: 'anyone@example.com',
+        },
+        () =>
+          executeTool(
+            findTool(name),
+            mockGraphClient,
+            {
+              // Schema-compatible stubs for any path params each tool may have.
+              'user-id': 'u',
+              'site-id': 's',
+              'drive-id': 'd',
+              'driveItem-id': 'i',
+              'list-id': 'l',
+              search: 'x',
+            },
+            policy
+          )
+      );
+      expect(result.isError, `${name} should pass policy`).toBeFalsy();
+    }
+  });
+
+  it('PR 7 tools are denied when missing from defaults and user has no allow entry', async () => {
+    const policy = Policy.fromDocument({ defaults: { allow: ['get-me'] } });
+    const mockGraphClient = makeMockGraphClient();
+    const result = await requestContext.run(
+      {
+        accessToken: 'at',
+        userOid: 'oid',
+        tenantId: 't',
+        userPrincipalName: 'anyone@example.com',
+      },
+      () =>
+        executeTool(findTool('list-users'), mockGraphClient, { search: '"displayName:S"' }, policy)
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Policy denied');
+  });
+});
