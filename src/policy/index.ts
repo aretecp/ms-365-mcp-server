@@ -30,6 +30,16 @@ export interface PolicyDocument {
   >;
 }
 
+/**
+ * Anything that can resolve a per-call policy decision. The runtime depends
+ * only on this shape, so both the immutable {@link Policy} (used in tests
+ * via {@link Policy.fromDocument}) and the hot-reloading {@link PolicyManager}
+ * (used in production via {@link PolicyManager.fromFile}) plug in cleanly.
+ */
+export interface PolicyChecker {
+  check(args: { userPrincipalName: string | null; toolName: string }): boolean;
+}
+
 const POLICY_PATH_ENV = 'MS365_MCP_POLICY_PATH';
 const DEFAULT_POLICY_PATH = path.join(process.cwd(), 'policy', 'policy.yaml');
 
@@ -65,7 +75,7 @@ function normalize(raw: PolicyDocument, sourcePath: string): NormalizedPolicy {
   return { defaultAllow, perUser, sourcePath };
 }
 
-export class Policy {
+export class Policy implements PolicyChecker {
   constructor(private readonly doc: NormalizedPolicy) {}
 
   static fromFile(filePath?: string): Policy {
@@ -113,5 +123,86 @@ export class Policy {
   /** Mostly for diagnostics. Returns the file path the policy was loaded from. */
   source(): string {
     return this.doc.sourcePath;
+  }
+}
+
+/**
+ * Hot-reloadable wrapper around {@link Policy}. Production code holds a
+ * single PolicyManager and the SIGHUP handler in `src/index.ts` calls
+ * {@link PolicyManager.reload} to swap the underlying Policy without
+ * restarting the process.
+ *
+ * Failure mode is intentionally soft: a parse error during reload logs and
+ * keeps the previously-loaded Policy active. A typo in the YAML file should
+ * not turn into a server outage.
+ *
+ * Overlapping reload calls coalesce: if a reload is in flight when another
+ * arrives, the in-flight reload completes and exactly one extra reload runs
+ * afterwards. Avoids both stampedes and starvation.
+ */
+export class PolicyManager implements PolicyChecker {
+  private current: Policy;
+  private pending: Promise<void> | null = null;
+  private queued = false;
+
+  constructor(
+    initial: Policy,
+    private readonly filePath: string
+  ) {
+    this.current = initial;
+  }
+
+  static fromFile(filePath?: string): PolicyManager {
+    const initial = Policy.fromFile(filePath);
+    return new PolicyManager(initial, initial.source());
+  }
+
+  check(args: { userPrincipalName: string | null; toolName: string }): boolean {
+    return this.current.check(args);
+  }
+
+  /** Visible for tests / diagnostics. */
+  source(): string {
+    return this.filePath;
+  }
+
+  /**
+   * Reload the policy from disk. Resolves once the (re)load completes; on a
+   * parse / validation failure the existing Policy is kept and the promise
+   * rejects so callers can log. Overlapping calls coalesce: while one reload
+   * is in flight, a single follow-up reload is queued.
+   */
+  async reload(): Promise<void> {
+    if (this.pending) {
+      this.queued = true;
+      await this.pending;
+      // After the in-flight reload finished, if we queued, we already ran a
+      // follow-up below; nothing more to do for this caller.
+      return;
+    }
+    this.pending = this.runReload();
+    try {
+      await this.pending;
+    } finally {
+      this.pending = null;
+      if (this.queued) {
+        this.queued = false;
+        // Fire-and-forget the follow-up; awaiting it would deadlock callers
+        // that were waiting on the original `pending` resolution.
+        void this.reload();
+      }
+    }
+  }
+
+  private async runReload(): Promise<void> {
+    try {
+      const next = Policy.fromFile(this.filePath);
+      this.current = next;
+      logger.info(`Policy reloaded from ${this.filePath}`);
+    } catch (error) {
+      const message = (error as Error).message;
+      logger.error(`Policy reload failed; keeping previous policy active: ${message}`);
+      throw error;
+    }
   }
 }

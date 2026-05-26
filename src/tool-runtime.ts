@@ -3,7 +3,7 @@ import { z } from 'zod';
 import logger from './logger.js';
 import GraphClient from './graph-client.js';
 import { getRequestContext } from './request-context.js';
-import { Policy } from './policy/index.js';
+import type { PolicyChecker } from './policy/index.js';
 import {
   ALL_TOOLS,
   ODATA_PARAM_NAMES,
@@ -76,7 +76,7 @@ async function executeTool(
   tool: Tool,
   graphClient: GraphClient,
   params: Record<string, unknown>,
-  policy?: Policy
+  policy?: PolicyChecker
 ): Promise<CallToolResult> {
   const ctx = getRequestContext();
   logger.info(`Tool ${tool.name} called with params: ${JSON.stringify(params)}`);
@@ -331,7 +331,7 @@ function registerUtilityToolWithMcp(
   server: McpServer,
   utility: UtilityTool,
   ctx: UtilityToolContext,
-  policy?: Policy
+  policy?: PolicyChecker
 ): void {
   server.tool(
     utility.name,
@@ -370,7 +370,7 @@ function registerUtilityToolWithMcp(
 }
 
 export interface RegisterToolsOptions {
-  policy?: Policy;
+  policy?: PolicyChecker;
 }
 
 export function registerTools(

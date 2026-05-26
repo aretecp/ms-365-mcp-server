@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import MicrosoftGraphServer from '../src/server.js';
-import { Policy } from '../src/policy/index.js';
+import { Policy, PolicyManager } from '../src/policy/index.js';
 import type { SessionManager } from '../src/sessions/manager.js';
 
 vi.mock('../src/logger.js', () => ({
@@ -12,7 +12,11 @@ vi.mock('../src/logger.js', () => ({
 // a transport that PR 3's per-user session auth does not support.
 describe('server HTTP-only guard', () => {
   const stubManager = {} as SessionManager;
-  const policy = Policy.fromDocument({ defaults: { allow: [] } });
+  const policy = new PolicyManager(
+    Policy.fromDocument({ defaults: { allow: [] } }),
+    '/tmp/policy.yaml'
+  );
+  const policyAdmins = new Set<string>();
   const secrets = { clientId: 'x', tenantId: 'common' };
 
   function build() {
@@ -21,6 +25,7 @@ describe('server HTTP-only guard', () => {
       secrets,
       sessionManager: stubManager,
       policy,
+      policyAdmins,
     });
     server.initialize('0.0.0');
     return server;
