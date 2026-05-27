@@ -76,15 +76,19 @@ Mechanism: `Tool.precondition` in `src/tools/types.ts`. Before executing a tool,
 
 Current preconditions:
 
-| Tool                  | Invariant                           | Implementation                                                                   |
-| --------------------- | ----------------------------------- | -------------------------------------------------------------------------------- |
-| `update-mail-message` | message must satisfy `isDraft=true` | `assertIsDraft` — GET `/me/messages/{id}?$select=isDraft`, refuse if not a draft |
-| `add-mail-attachment` | message must satisfy `isDraft=true` | same                                                                             |
-| `delete-mail-message` | message must satisfy `isDraft=true` | same — model cannot mass-delete received mail                                    |
+| Tool                    | Invariant                             | Implementation                                                                           |
+| ----------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `update-mail-message`   | message must satisfy `isDraft=true`   | `assertIsDraft` — GET `/me/messages/{id}?$select=isDraft`, refuse if not a draft         |
+| `add-mail-attachment`   | message must satisfy `isDraft=true`   | same                                                                                     |
+| `delete-mail-message`   | message must satisfy `isDraft=true`   | same — model cannot mass-delete received mail                                            |
+| `update-calendar-event` | event must satisfy `isOrganizer=true` | `assertIsOrganizer` — GET `/me/events/{id}?$select=isOrganizer`, refuse if not organizer |
+| `delete-calendar-event` | event must satisfy `isOrganizer=true` | same                                                                                     |
 
 `Mail.ReadWrite` at the Graph layer is broader than what we want to expose. Without `assertIsDraft`, the LLM could PATCH any message (mark as read, flag, recategorize), DELETE any message (clear an inbox), or attach files to received mail. The precondition closes that gap.
 
-Future preconditions tracked in [issue #10](https://github.com/aretecp/ms-365-mcp-server/issues/10) (`assertIsOrganizer` for calendar update/delete) and [issue #11](https://github.com/aretecp/ms-365-mcp-server/issues/11) (full surface audit).
+`Calendars.ReadWrite` has the same shape: it covers any event the signed-in user is an attendee of, not just events they organize. Without `assertIsOrganizer`, the LLM could PATCH an attendee-side event (silently mutating the user's local copy) or DELETE one (which Graph interprets as declining the invite). The precondition restricts both write paths to organizer-owned events; accepted/declined invites must be managed by the human in Outlook.
+
+Future preconditions tracked in [issue #11](https://github.com/aretecp/ms-365-mcp-server/issues/11) (full surface audit).
 
 ## Production deployment
 

@@ -1,5 +1,47 @@
 import { z } from 'zod';
-import { OData, type Tool } from './types.js';
+import type GraphClient from '../graph-client.js';
+import { OData, type Tool, type ToolPrecondition } from './types.js';
+
+/**
+ * Server-side guard: refuses the tool call unless the signed-in user is the
+ * organizer of the referenced event. Calendars.ReadWrite covers any event the
+ * user is an attendee of at the Graph layer — this guard narrows write
+ * capability to organizer-owned events. Mutating an attendee-side copy via
+ * PATCH/DELETE would silently change the user's local copy (or decline the
+ * invite); neither is what update-calendar-event / delete-calendar-event
+ * describe.
+ *
+ * Performs a tiny GET with $select=isOrganizer to avoid pulling the whole
+ * event. If the GET 404s, the original tool call would have 404'd anyway —
+ * re-throw a clear message so the model can correct.
+ */
+const assertIsOrganizer: ToolPrecondition = async (
+  graphClient: GraphClient,
+  params: Record<string, unknown>
+) => {
+  const id = params['event-id'];
+  if (typeof id !== 'string' || id.length === 0) {
+    throw new Error('event-id is required and must be a non-empty string.');
+  }
+  const path = `/me/events/${encodeURIComponent(id)}?$select=isOrganizer`;
+  let evt: { isOrganizer?: boolean } | null;
+  try {
+    evt = (await graphClient.graphRequest(path, { method: 'GET' })) as {
+      isOrganizer?: boolean;
+    } | null;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `could not verify event is organized by the signed-in user (lookup failed: ${message}). The event may not exist or the signed-in user may not have access.`
+    );
+  }
+  if (!evt || evt.isOrganizer !== true) {
+    throw new Error(
+      `event '${id}' was not organized by the signed-in user (isOrganizer=${String(evt?.isOrganizer)}). ` +
+        'Only events you organize can be modified through this tool. Accepted/declined invites should be managed in Outlook directly.'
+    );
+  }
+};
 
 const dateTimeTimeZoneSchema = z
   .object({
@@ -170,15 +212,16 @@ export const calendarTools: readonly Tool[] = [
   {
     name: 'update-calendar-event',
     description:
-      'Update fields on an existing calendar event by id. Any field omitted is left unchanged. Use get-calendar-event first if you need to read the current values before mutating.',
+      'Update fields on an existing calendar event by id. Any field omitted is left unchanged. Use get-calendar-event first if you need to read the current values before mutating. The server refuses this call if the signed-in user is not the organizer (isOrganizer=true) — accepted/declined invites must be managed by the human in Outlook.',
     method: 'PATCH',
     path: '/me/events/{event-id}',
     scopes: ['Calendars.ReadWrite'],
+    precondition: assertIsOrganizer,
     params: [
       {
         name: 'event-id',
         location: 'path',
-        schema: z.string().describe('Calendar event id'),
+        schema: z.string().describe('Calendar event id (must satisfy isOrganizer=true)'),
       },
       {
         name: 'body',
@@ -190,15 +233,16 @@ export const calendarTools: readonly Tool[] = [
   {
     name: 'delete-calendar-event',
     description:
-      'Delete a calendar event by id. For organizers of recurring events this deletes the whole series — use update-calendar-event with a cancel-style change if a single occurrence is intended.',
+      'Delete a calendar event by id. For organizers of recurring events this deletes the whole series — use update-calendar-event with a cancel-style change if a single occurrence is intended. The server refuses this call if the signed-in user is not the organizer (isOrganizer=true) — the LLM cannot decline invites or mass-clear the calendar through this tool.',
     method: 'DELETE',
     path: '/me/events/{event-id}',
     scopes: ['Calendars.ReadWrite'],
+    precondition: assertIsOrganizer,
     params: [
       {
         name: 'event-id',
         location: 'path',
-        schema: z.string().describe('Calendar event id'),
+        schema: z.string().describe('Calendar event id (must satisfy isOrganizer=true)'),
       },
     ],
   },

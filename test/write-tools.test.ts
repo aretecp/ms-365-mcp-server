@@ -64,25 +64,30 @@ describe('write-tool runtime', () => {
   let graphRequest: ReturnType<typeof vi.fn>;
 
   // Mail write tools (other than create-draft-email) carry an isDraft
-  // precondition. The runtime issues a GET ?$select=isDraft before the main
-  // call; default the mock to "yes it's a draft" so existing test bodies
-  // exercise the main code path. Negative cases override per-test.
+  // precondition; calendar update/delete tools carry an isOrganizer
+  // precondition. The runtime issues a GET ?$select=<prop> before the main
+  // call; default the mock to "yes it's a draft" / "yes you're the organizer"
+  // so existing test bodies exercise the main code path. Negative cases
+  // override per-test.
   beforeEach(() => {
     vi.clearAllMocks();
     graphRequest = vi.fn().mockImplementation((path: string) => {
       if (path.includes('$select=isDraft')) {
         return Promise.resolve({ isDraft: true });
       }
+      if (path.includes('$select=isOrganizer')) {
+        return Promise.resolve({ isOrganizer: true });
+      }
       return Promise.resolve({ content: [{ type: 'text', text: '{}' }] });
     });
     mockGraphClient = { graphRequest } as unknown as GraphClient;
   });
 
-  // Helper: the main Graph call is whichever one isn't the isDraft probe.
+  // Helper: the main Graph call is whichever one isn't a precondition probe.
   const mainCall = () =>
-    graphRequest.mock.calls.find(([p]: [string]) => !p.includes('$select=isDraft')) as
-      | [string, { method: string; body?: string }]
-      | undefined;
+    graphRequest.mock.calls.find(
+      ([p]: [string]) => !p.includes('$select=isDraft') && !p.includes('$select=isOrganizer')
+    ) as [string, { method: string; body?: string }] | undefined;
 
   it('create-draft-email POSTs a JSON body to /me/messages', async () => {
     const tool = findTool('create-draft-email');
@@ -182,16 +187,83 @@ describe('write-tool runtime', () => {
         end: { dateTime: '2026-05-22T15:00:00', timeZone: 'America/New_York' },
       },
     });
-    const [calledPath, options] = graphRequest.mock.calls[0] as [
-      string,
-      { method: string; body: string },
-    ];
-    expect(calledPath).toBe('/me/events');
-    expect(options.method).toBe('POST');
-    const parsed = JSON.parse(options.body);
+
+    // create-calendar-event has no precondition — only one call.
+    expect(graphRequest.mock.calls).toHaveLength(1);
+    const call = mainCall()!;
+    expect(call[0]).toBe('/me/events');
+    expect(call[1].method).toBe('POST');
+    const parsed = JSON.parse(call[1].body!);
     expect(parsed.subject).toBe('Sync');
     expect(parsed.start.timeZone).toBe('America/New_York');
   });
+
+  it('update-calendar-event PATCHes the event id after isOrganizer check passes', async () => {
+    const tool = findTool('update-calendar-event');
+    await executeTool(tool, mockGraphClient, {
+      'event-id': 'evt-1',
+      body: { subject: 'Renamed' },
+    });
+
+    // First call: precondition probe. Second call: the PATCH.
+    expect(graphRequest.mock.calls[0][0]).toBe('/me/events/evt-1?$select=isOrganizer');
+    expect(graphRequest.mock.calls[0][1].method).toBe('GET');
+
+    const call = mainCall()!;
+    expect(call[0]).toBe('/me/events/evt-1');
+    expect(call[1].method).toBe('PATCH');
+    expect(JSON.parse(call[1].body!)).toEqual({ subject: 'Renamed' });
+  });
+
+  it('delete-calendar-event DELETEs after isOrganizer check passes', async () => {
+    const tool = findTool('delete-calendar-event');
+    await executeTool(tool, mockGraphClient, { 'event-id': 'evt-2' });
+
+    expect(graphRequest.mock.calls[0][0]).toBe('/me/events/evt-2?$select=isOrganizer');
+    const call = mainCall()!;
+    expect(call[0]).toBe('/me/events/evt-2');
+    expect(call[1].method).toBe('DELETE');
+  });
+
+  // ---- Precondition: calendar negative cases ----
+  // Attendee-side events (isOrganizer=false) and nonexistent events must be
+  // refused before any PATCH/DELETE fires.
+
+  for (const toolName of ['update-calendar-event', 'delete-calendar-event']) {
+    it(`${toolName} REFUSES when isOrganizer=false (attendee event) and never fires the main call`, async () => {
+      graphRequest = vi.fn().mockResolvedValue({ isOrganizer: false });
+      mockGraphClient = { graphRequest } as unknown as GraphClient;
+
+      const params: Record<string, unknown> = { 'event-id': 'invite-evt' };
+      if (toolName === 'update-calendar-event') params.body = { subject: 'nope' };
+
+      const result = await executeTool(findTool(toolName), mockGraphClient, params);
+
+      expect(result.isError).toBe(true);
+      const payload = JSON.parse((result.content[0] as { text: string }).text);
+      expect(payload.error).toMatch(/precondition failed/i);
+      expect(payload.error).toMatch(/not organized by the signed-in user/i);
+      // Exactly one Graph call — the isOrganizer probe — and nothing else.
+      expect(graphRequest.mock.calls).toHaveLength(1);
+      expect(graphRequest.mock.calls[0][0]).toContain('$select=isOrganizer');
+    });
+
+    it(`${toolName} REFUSES when the event does not exist (precondition GET fails)`, async () => {
+      graphRequest = vi.fn().mockRejectedValue(new Error('404 Not Found'));
+      mockGraphClient = { graphRequest } as unknown as GraphClient;
+
+      const params: Record<string, unknown> = { 'event-id': 'gone' };
+      if (toolName === 'update-calendar-event') params.body = { subject: 'nope' };
+
+      const result = await executeTool(findTool(toolName), mockGraphClient, params);
+
+      expect(result.isError).toBe(true);
+      const payload = JSON.parse((result.content[0] as { text: string }).text);
+      expect(payload.error).toMatch(/could not verify event is organized/i);
+      // Only the failed probe ran — no PATCH/DELETE attempted.
+      expect(graphRequest.mock.calls).toHaveLength(1);
+    });
+  }
 });
 
 describe('policy gating on write tools', () => {
