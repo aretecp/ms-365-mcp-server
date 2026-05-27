@@ -88,7 +88,7 @@ Current preconditions:
 
 `Calendars.ReadWrite` has the same shape: it covers any event the signed-in user is an attendee of, not just events they organize. Without `assertIsOrganizer`, the LLM could PATCH an attendee-side event (silently mutating the user's local copy) or DELETE one (which Graph interprets as declining the invite). The precondition restricts both write paths to organizer-owned events; accepted/declined invites must be managed by the human in Outlook.
 
-Future preconditions tracked in [issue #11](https://github.com/aretecp/ms-365-mcp-server/issues/11) (full surface audit).
+The full surface audit ran in [issue #11](https://github.com/aretecp/ms-365-mcp-server/issues/11) and lives in [`docs/SECURITY-AUDIT.md`](docs/SECURITY-AUDIT.md). Remaining preconditions identified by the audit are tracked in [issue #12](https://github.com/aretecp/ms-365-mcp-server/issues/12) (`assertChatIsPostable` for `send-chat-message`) and [issue #13](https://github.com/aretecp/ms-365-mcp-server/issues/13) (`assertChannelIsStandardAndInternal` for `send-channel-message` + `send-channel-message-reply`). Online-meeting writes and event/draft creation tools are closed by Graph natural scoping — no precondition needed.
 
 ## Production deployment
 
