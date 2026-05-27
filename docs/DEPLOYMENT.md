@@ -113,8 +113,8 @@ module "m365_mcp" {
     # Local MCP clients (Claude Code, Claude Desktop, MCP Inspector).
     # Loopback http is permitted by Entra under the Web platform.
     # Confirm the port observed at first sign-in and add more rows as needed.
-    { uri = "http://localhost:33418/callback",   type = "web" },
-    { uri = "http://127.0.0.1:33418/callback",   type = "web" },
+    { uri = "http://localhost:13151/callback",   type = "web" },
+    { uri = "http://127.0.0.1:13151/callback",   type = "web" },
   ]
 
   # Delegated Graph permissions. Names resolve to UUIDs via the data sources
@@ -204,7 +204,7 @@ module "m365_mcp_secrets" {
 > **Two things to double-check before PR-ing this:**
 >
 > 1. `OnlineMeetingTranscript.Read.All` is not in the current `docs/graph-permissions.md` delegated section in the terraform repo. Confirm Microsoft Graph still exposes it as a delegated scope (it does, as of 2026), then either add the key to the docs and rely on the data-source resolution, or fall back to a literal UUID in this module call.
-> 2. The loopback ports `33418` are illustrative. Some MCP clients pick a fixed port; some pick at random within a range. Observe the actual port from the first failed sign-in (it appears in the consent screen URL) and add a single matching row per client.
+> 2. The loopback ports `13151` are illustrative. Some MCP clients pick a fixed port; some pick at random within a range. Observe the actual port from the first failed sign-in (it appears in the consent screen URL) and add a single matching row per client.
 
 ### 3.3 PR + apply + admin consent
 
@@ -716,7 +716,7 @@ Claude Code uses a loopback redirect URI (`http://127.0.0.1:<port>/...`). The se
 
 ```bash
 fly secrets set --app arete-m365-mcp \
-  MS365_MCP_ALLOWED_REDIRECT_URIS="https://claude.ai/api/mcp/auth_callback,http://127.0.0.1:33418/callback,http://localhost:33418/callback"
+  MS365_MCP_ALLOWED_REDIRECT_URIS="https://claude.ai/api/mcp/auth_callback,http://127.0.0.1:13151/callback,http://localhost:13151/callback"
 ```
 
 The loopback port Claude Code picks is stable per install — observe the actual port from the redirect URL in the consent screen the first time, then add it. If users routinely switch machines, consider dropping the allowlist entirely (the default rules already block non-loopback http, and reject `javascript:` / `data:` / `file:`); the tradeoff is that any https origin becomes acceptable as a redirect target. For Areté's threat model (closed user set, Entra tenant scoped), that's a defensible posture.
