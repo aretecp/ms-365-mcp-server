@@ -1,3 +1,9 @@
+## [2.2.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.1.0...v2.2.0) (2026-05-27)
+
+### New Features
+
+* **runtime:** assertIsOrganizer precondition on calendar write tools ([8fa98e8](https://github.com/aretecp/ms-365-mcp-server/commit/8fa98e84ab74da41e263d56f29fdd8ff92f9a71d))
+
 ## [2.1.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.0.0...v2.1.0) (2026-05-27)
 
 ### New Features
