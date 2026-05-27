@@ -1,3 +1,9 @@
+## [2.1.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.0.0...v2.1.0) (2026-05-27)
+
+### New Features
+
+* **runtime:** server-enforced preconditions on mail write tools ([3574526](https://github.com/aretecp/ms-365-mcp-server/commit/35745260c3b65236d953171fbf57531888b3015a))
+
 ## [2.0.0](https://github.com/aretecp/ms-365-mcp-server/compare/v1.0.0...v2.0.0) (2026-05-27)
 
 ### ⚠ BREAKING CHANGES
