@@ -63,13 +63,26 @@ describe('write-tool runtime', () => {
   let mockGraphClient: GraphClient;
   let graphRequest: ReturnType<typeof vi.fn>;
 
+  // Mail write tools (other than create-draft-email) carry an isDraft
+  // precondition. The runtime issues a GET ?$select=isDraft before the main
+  // call; default the mock to "yes it's a draft" so existing test bodies
+  // exercise the main code path. Negative cases override per-test.
   beforeEach(() => {
     vi.clearAllMocks();
-    graphRequest = vi.fn().mockResolvedValue({
-      content: [{ type: 'text', text: '{}' }],
+    graphRequest = vi.fn().mockImplementation((path: string) => {
+      if (path.includes('$select=isDraft')) {
+        return Promise.resolve({ isDraft: true });
+      }
+      return Promise.resolve({ content: [{ type: 'text', text: '{}' }] });
     });
     mockGraphClient = { graphRequest } as unknown as GraphClient;
   });
+
+  // Helper: the main Graph call is whichever one isn't the isDraft probe.
+  const mainCall = () =>
+    graphRequest.mock.calls.find(([p]: [string]) => !p.includes('$select=isDraft')) as
+      | [string, { method: string; body?: string }]
+      | undefined;
 
   it('create-draft-email POSTs a JSON body to /me/messages', async () => {
     const tool = findTool('create-draft-email');
@@ -81,40 +94,83 @@ describe('write-tool runtime', () => {
       },
     });
 
-    const [calledPath, options] = graphRequest.mock.calls[0] as [
-      string,
-      { method: string; body: string },
-    ];
-    expect(calledPath).toBe('/me/messages');
-    expect(options.method).toBe('POST');
-    const parsed = JSON.parse(options.body);
+    // create-draft-email has no precondition — only one call.
+    expect(graphRequest.mock.calls).toHaveLength(1);
+    const call = mainCall()!;
+    expect(call[0]).toBe('/me/messages');
+    expect(call[1].method).toBe('POST');
+    const parsed = JSON.parse(call[1].body!);
     expect(parsed.subject).toBe('Hello');
     expect(parsed.toRecipients[0].emailAddress.address).toBe('to@example.com');
   });
 
-  it('update-mail-message PATCHes the message id with a JSON body', async () => {
+  it('update-mail-message PATCHes the message id after isDraft check passes', async () => {
     const tool = findTool('update-mail-message');
     await executeTool(tool, mockGraphClient, {
       'message-id': 'msg-1',
       body: { isRead: true },
     });
 
-    const [calledPath, options] = graphRequest.mock.calls[0] as [
-      string,
-      { method: string; body: string },
-    ];
-    expect(calledPath).toBe('/me/messages/msg-1');
-    expect(options.method).toBe('PATCH');
-    expect(JSON.parse(options.body)).toEqual({ isRead: true });
+    // First call: precondition probe. Second call: the PATCH.
+    expect(graphRequest.mock.calls[0][0]).toBe('/me/messages/msg-1?$select=isDraft');
+    expect(graphRequest.mock.calls[0][1].method).toBe('GET');
+
+    const call = mainCall()!;
+    expect(call[0]).toBe('/me/messages/msg-1');
+    expect(call[1].method).toBe('PATCH');
+    expect(JSON.parse(call[1].body!)).toEqual({ isRead: true });
   });
 
-  it('delete-mail-message DELETEs the message resource', async () => {
+  it('delete-mail-message DELETEs after isDraft check passes', async () => {
     const tool = findTool('delete-mail-message');
     await executeTool(tool, mockGraphClient, { 'message-id': 'msg-3' });
 
-    const [calledPath, options] = graphRequest.mock.calls[0] as [string, { method: string }];
-    expect(calledPath).toBe('/me/messages/msg-3');
-    expect(options.method).toBe('DELETE');
+    expect(graphRequest.mock.calls[0][0]).toBe('/me/messages/msg-3?$select=isDraft');
+    const call = mainCall()!;
+    expect(call[0]).toBe('/me/messages/msg-3');
+    expect(call[1].method).toBe('DELETE');
+  });
+
+  // ---- Precondition: negative cases ----
+  // The runtime must refuse non-draft writes regardless of tool description.
+
+  for (const toolName of ['update-mail-message', 'delete-mail-message', 'add-mail-attachment']) {
+    it(`${toolName} REFUSES when isDraft=false (received mail) and never fires the main call`, async () => {
+      graphRequest = vi.fn().mockResolvedValue({ isDraft: false });
+      mockGraphClient = { graphRequest } as unknown as GraphClient;
+
+      const params: Record<string, unknown> = { 'message-id': 'received-msg' };
+      if (toolName === 'update-mail-message') params.body = { isRead: true };
+      if (toolName === 'add-mail-attachment') {
+        params.body = { '@odata.type': '#microsoft.graph.fileAttachment', name: 'x' };
+      }
+
+      const result = await executeTool(findTool(toolName), mockGraphClient, params);
+
+      expect(result.isError).toBe(true);
+      const payload = JSON.parse((result.content[0] as { text: string }).text);
+      expect(payload.error).toMatch(/precondition failed/i);
+      expect(payload.error).toMatch(/not a draft/i);
+      // Exactly one Graph call — the isDraft probe — and nothing else.
+      expect(graphRequest.mock.calls).toHaveLength(1);
+      expect(graphRequest.mock.calls[0][0]).toContain('$select=isDraft');
+    });
+  }
+
+  it('update-mail-message REFUSES when the message does not exist (precondition GET fails)', async () => {
+    graphRequest = vi.fn().mockRejectedValue(new Error('404 Not Found'));
+    mockGraphClient = { graphRequest } as unknown as GraphClient;
+
+    const result = await executeTool(findTool('update-mail-message'), mockGraphClient, {
+      'message-id': 'gone',
+      body: { isRead: true },
+    });
+
+    expect(result.isError).toBe(true);
+    const payload = JSON.parse((result.content[0] as { text: string }).text);
+    expect(payload.error).toMatch(/could not verify message is a draft/i);
+    // Only the failed probe ran — no PATCH attempted.
+    expect(graphRequest.mock.calls).toHaveLength(1);
   });
 
   it('create-calendar-event POSTs the event body to /me/events', async () => {

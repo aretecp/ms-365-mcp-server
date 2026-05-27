@@ -1,5 +1,44 @@
 import { z } from 'zod';
-import { OData, type Tool } from './types.js';
+import type GraphClient from '../graph-client.js';
+import { OData, type Tool, type ToolPrecondition } from './types.js';
+
+/**
+ * Server-side guard: refuses the tool call unless the referenced message is a
+ * draft. Mail.ReadWrite covers the entire mailbox at the Graph layer — this
+ * guard narrows write capability to drafts for tools whose description says
+ * "draft" but whose underlying endpoint accepts any message id.
+ *
+ * Performs a tiny GET with $select=isDraft to avoid pulling the message body.
+ * If the GET 404s, the original tool call would have 404'd anyway — re-throw
+ * a clear message so the model can correct.
+ */
+const assertIsDraft: ToolPrecondition = async (
+  graphClient: GraphClient,
+  params: Record<string, unknown>
+) => {
+  const id = params['message-id'];
+  if (typeof id !== 'string' || id.length === 0) {
+    throw new Error('message-id is required and must be a non-empty string.');
+  }
+  const path = `/me/messages/${encodeURIComponent(id)}?$select=isDraft`;
+  let msg: { isDraft?: boolean } | null;
+  try {
+    msg = (await graphClient.graphRequest(path, { method: 'GET' })) as {
+      isDraft?: boolean;
+    } | null;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `could not verify message is a draft (lookup failed: ${message}). The message may not exist or the signed-in user may not have access.`
+    );
+  }
+  if (!msg || msg.isDraft !== true) {
+    throw new Error(
+      `message '${id}' is not a draft (isDraft=${String(msg?.isDraft)}). ` +
+        'This tool refuses to modify non-draft mail. Create a fresh draft with create-draft-email instead, or have the human action the message in Outlook.'
+    );
+  }
+};
 
 const MAIL_SEARCH_TIP =
   'CRITICAL: When searching emails, the $search parameter value MUST be wrapped in double quotes. ' +
@@ -195,15 +234,16 @@ export const mailTools: readonly Tool[] = [
   {
     name: 'update-mail-message',
     description:
-      'Update fields on a mail message (draft) by id. Any field omitted is left unchanged. Use create-draft-email to start a new draft and this to amend it; sending is done by the human from Outlook (no send tool exists).',
+      'Update fields on a draft mail message by id. Any field omitted is left unchanged. The server refuses this call if the message is not a draft (isDraft=true) — non-drafts must be actioned by the human in Outlook.',
     method: 'PATCH',
     path: '/me/messages/{message-id}',
     scopes: ['Mail.ReadWrite'],
+    precondition: assertIsDraft,
     params: [
       {
         name: 'message-id',
         location: 'path',
-        schema: z.string().describe('Draft message id'),
+        schema: z.string().describe('Draft message id (must satisfy isDraft=true)'),
       },
       {
         name: 'body',
@@ -215,15 +255,16 @@ export const mailTools: readonly Tool[] = [
   {
     name: 'add-mail-attachment',
     description:
-      'Add an attachment to a draft message. For files under 3 MB pass base64 in contentBytes; for larger files use Graph upload sessions (not exposed in v1).',
+      'Add an attachment to a draft message. For files under 3 MB pass base64 in contentBytes; for larger files use Graph upload sessions (not exposed in v1). The server refuses this call if the message is not a draft.',
     method: 'POST',
     path: '/me/messages/{message-id}/attachments',
     scopes: ['Mail.ReadWrite'],
+    precondition: assertIsDraft,
     params: [
       {
         name: 'message-id',
         location: 'path',
-        schema: z.string().describe('Draft message id'),
+        schema: z.string().describe('Draft message id (must satisfy isDraft=true)'),
       },
       {
         name: 'body',
@@ -235,15 +276,16 @@ export const mailTools: readonly Tool[] = [
   {
     name: 'delete-mail-message',
     description:
-      'Move a mail message to Deleted Items by id. Irreversible from the API perspective — restoration requires user action in Outlook. Use sparingly.',
+      'Move a draft mail message to Deleted Items by id. The server refuses this call if the message is not a draft — received and sent mail must be actioned by the human in Outlook (the LLM cannot mass-delete an inbox via this tool).',
     method: 'DELETE',
     path: '/me/messages/{message-id}',
     scopes: ['Mail.ReadWrite'],
+    precondition: assertIsDraft,
     params: [
       {
         name: 'message-id',
         location: 'path',
-        schema: z.string().describe('Mail message id'),
+        schema: z.string().describe('Draft message id (must satisfy isDraft=true)'),
       },
     ],
   },

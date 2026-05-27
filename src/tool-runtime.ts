@@ -72,6 +72,21 @@ function policyDeniedResult(tool: Tool, upn: string | null): CallToolResult {
   };
 }
 
+function preconditionFailedResult(tool: Tool, message: string): CallToolResult {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({
+          error: `Server-side precondition failed for tool '${tool.name}': ${message}`,
+          tip: 'This invariant is enforced in the MCP server runtime, not by tool description or policy. Adjust the tool call to satisfy it.',
+        }),
+      },
+    ],
+    isError: true,
+  };
+}
+
 async function executeTool(
   tool: Tool,
   graphClient: GraphClient,
@@ -89,6 +104,21 @@ async function executeTool(
       `Policy denied tool ${tool.name} for ${ctx?.userPrincipalName ?? 'anonymous'} (oid=${ctx?.userOid ?? 'n/a'})`
     );
     return policyDeniedResult(tool, ctx?.userPrincipalName ?? null);
+  }
+
+  // Server-side guards run AFTER policy and BEFORE any outbound Graph call.
+  // Throw from the precondition to refuse — tool descriptions are not
+  // load-bearing for security; the runtime enforces invariants in code.
+  if (tool.precondition) {
+    try {
+      await tool.precondition(graphClient, params);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        `Precondition refused tool ${tool.name} for ${ctx?.userPrincipalName ?? 'anonymous'}: ${message}`
+      );
+      return preconditionFailedResult(tool, message);
+    }
   }
 
   try {

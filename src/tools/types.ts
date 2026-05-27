@@ -1,9 +1,24 @@
 import { z } from 'zod';
+import type GraphClient from '../graph-client.js';
 
 /**
  * Where a {@link ToolParam} value goes in the outbound Graph request.
  */
 export type ParamLocation = 'path' | 'query' | 'header' | 'body';
+
+/**
+ * Server-side guard invoked before a tool's main Graph call. Throw to refuse
+ * the call with a structured error returned to the model.
+ *
+ * Use for runtime invariants the underlying Graph endpoint does NOT enforce
+ * but the tool description claims — for example, that a `/me/messages/{id}`
+ * PATCH is only valid against drafts even though Graph accepts it for any
+ * message. Tool descriptions are advisory; preconditions are authoritative.
+ */
+export type ToolPrecondition = (
+  graphClient: GraphClient,
+  params: Record<string, unknown>
+) => Promise<void>;
 
 /**
  * One parameter on a hand-written {@link Tool}. The Zod schema carries the
@@ -80,6 +95,16 @@ export interface Tool {
    * Reserved for a future read-only-mode toggle; ignored by the v1 runtime.
    */
   readOnly?: boolean;
+  /**
+   * Server-side guard run after policy.check and before the main Graph call.
+   * Throw to refuse — the Graph call never fires. See {@link ToolPrecondition}.
+   *
+   * Use this for invariants we want enforced in code rather than relying on
+   * the LLM to respect the tool description. Example: mail write tools that
+   * should only touch drafts but whose underlying Graph endpoint accepts
+   * any message id.
+   */
+  precondition?: ToolPrecondition;
 }
 
 /**

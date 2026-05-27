@@ -68,6 +68,24 @@ This is structural human-in-the-loop. With both the tool absent and the scope un
 
 We may re-add send capability in a future release with guardrails — at minimum an approved-recipients / approved-domain allow-list enforced at the tool layer before any send call reaches Graph. Tracked in [issue #9](https://github.com/aretecp/ms-365-mcp-server/issues/9).
 
+## Server-enforced invariants
+
+> **Tool descriptions are not a security control.** The LLM can ignore them; well-meaning prompt-engineering papers over real authorization gaps. This server enforces critical invariants in code, in the runtime, before any outbound Graph call. If the description says "draft" and the LLM passes a non-draft id, the server refuses — independent of policy, independent of the model's intent.
+
+Mechanism: `Tool.precondition` in `src/tools/types.ts`. Before executing a tool, the runtime in `src/tool-runtime.ts` invokes the precondition; a thrown error becomes a structured MCP error response and the main Graph call never fires.
+
+Current preconditions:
+
+| Tool                  | Invariant                           | Implementation                                                                   |
+| --------------------- | ----------------------------------- | -------------------------------------------------------------------------------- |
+| `update-mail-message` | message must satisfy `isDraft=true` | `assertIsDraft` — GET `/me/messages/{id}?$select=isDraft`, refuse if not a draft |
+| `add-mail-attachment` | message must satisfy `isDraft=true` | same                                                                             |
+| `delete-mail-message` | message must satisfy `isDraft=true` | same — model cannot mass-delete received mail                                    |
+
+`Mail.ReadWrite` at the Graph layer is broader than what we want to expose. Without `assertIsDraft`, the LLM could PATCH any message (mark as read, flag, recategorize), DELETE any message (clear an inbox), or attach files to received mail. The precondition closes that gap.
+
+Future preconditions tracked in [issue #10](https://github.com/aretecp/ms-365-mcp-server/issues/10) (`assertIsOrganizer` for calendar update/delete) and [issue #11](https://github.com/aretecp/ms-365-mcp-server/issues/11) (full surface audit).
+
 ## Production deployment
 
 Documented in our internal infrastructure repo. The server expects:
