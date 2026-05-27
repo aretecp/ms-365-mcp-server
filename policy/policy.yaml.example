@@ -80,11 +80,11 @@ defaults:
 # users:
 #   spencer@areteintelligence.com:
 #     allow:
-#       # Mail drafts + send
+#       # Mail drafts (no send — human reviews + sends from Outlook).
+#       # See README "Why no Mail.Send".
 #       - create-draft-email
 #       - update-mail-message
 #       - add-mail-attachment
-#       - send-draft-message
 #       - delete-mail-message
 #       # Calendar writes
 #       - create-calendar-event

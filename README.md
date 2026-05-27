@@ -8,7 +8,7 @@ Originally forked from [Softeria/ms-365-mcp-server](https://github.com/Softeria/
 
 Hand-written tool surface. Currently exposing:
 
-- **Mail**: read + draft + send + delete (Outlook).
+- **Mail**: read + draft + delete (Outlook). **No send** — see [Why no Mail.Send](#why-no-mailsend).
 - **Calendar**: read + create + update + delete events.
 - **Files (OneDrive)**: read-only.
 - **SharePoint**: sites, document libraries, lists — read-only.
@@ -47,7 +47,7 @@ npm run dev:http   # binds 127.0.0.1:3000
 Delegated permissions needed for the full v1.5 surface. **Bold scopes need admin consent** on the Entra app registration:
 
 - `User.Read`, `offline_access` (silently injected)
-- Mail: `Mail.Read`, `Mail.ReadWrite`, `Mail.Send`
+- Mail: `Mail.Read`, `Mail.ReadWrite` (no `Mail.Send` — see [Why no Mail.Send](#why-no-mailsend))
 - Calendar: `Calendars.Read`, `Calendars.ReadWrite`
 - Files: `Files.Read`
 - Directory: **`User.ReadBasic.All`**
@@ -59,6 +59,14 @@ Delegated permissions needed for the full v1.5 surface. **Bold scopes need admin
 After granting consent, users will see a single consent prompt on first sign-in covering everything they're authorized to use.
 
 Point an MCP client (Claude Desktop, MCP Inspector, etc.) at `http://localhost:3000/mcp`. The server handles OAuth discovery via `/.well-known/oauth-authorization-server` and `/authorize` + `/token` endpoints, then accepts `Authorization: Bearer <token>` on `/mcp`.
+
+### Why no Mail.Send
+
+The server can draft, update, attach to, and delete mail (`Mail.ReadWrite`) — but cannot send. There is no `send-draft-message` tool, and `Mail.Send` is deliberately omitted from the Entra app's requested scopes. Drafts the LLM produces sit in the user's Drafts folder; the human reviews them in Outlook and clicks Send themselves.
+
+This is structural human-in-the-loop. With both the tool absent and the scope ungranted, an unintended `messages/{id}/send` call would be refused by Microsoft Graph even if it bypassed our policy layer.
+
+We may re-add send capability in a future release with guardrails — at minimum an approved-recipients / approved-domain allow-list enforced at the tool layer before any send call reaches Graph. Tracked in [issue #9](https://github.com/aretecp/ms-365-mcp-server/issues/9).
 
 ## Production deployment
 

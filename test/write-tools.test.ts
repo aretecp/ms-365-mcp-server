@@ -16,7 +16,6 @@ describe('write-tool registration', () => {
   const writeNames = [
     'create-draft-email',
     'update-mail-message',
-    'send-draft-message',
     'add-mail-attachment',
     'delete-mail-message',
     'create-calendar-event',
@@ -31,8 +30,13 @@ describe('write-tool registration', () => {
   it('write-tool scopes are exposed via OAuth scopes_supported', () => {
     const scopes = resolveAuthScopes();
     expect(scopes).toContain('Mail.ReadWrite');
-    expect(scopes).toContain('Mail.Send');
     expect(scopes).toContain('Calendars.ReadWrite');
+  });
+
+  it('Mail.Send is NOT requested — drafts only, human sends from Outlook', () => {
+    const scopes = resolveAuthScopes();
+    expect(scopes).not.toContain('Mail.Send');
+    expect(ALL_TOOLS.find((t) => t.name === 'send-draft-message')).toBeUndefined();
   });
 
   it('non-GET write tools surface destructiveHint via the McpServer registration', () => {
@@ -104,19 +108,6 @@ describe('write-tool runtime', () => {
     expect(JSON.parse(options.body)).toEqual({ isRead: true });
   });
 
-  it('send-draft-message POSTs to the /send sub-resource with no body', async () => {
-    const tool = findTool('send-draft-message');
-    await executeTool(tool, mockGraphClient, { 'message-id': 'msg-2' });
-
-    const [calledPath, options] = graphRequest.mock.calls[0] as [
-      string,
-      { method: string; body?: string },
-    ];
-    expect(calledPath).toBe('/me/messages/msg-2/send');
-    expect(options.method).toBe('POST');
-    expect(options.body).toBeUndefined();
-  });
-
   it('delete-mail-message DELETEs the message resource', async () => {
     const tool = findTool('delete-mail-message');
     await executeTool(tool, mockGraphClient, { 'message-id': 'msg-3' });
@@ -148,7 +139,7 @@ describe('write-tool runtime', () => {
 });
 
 describe('policy gating on write tools', () => {
-  const writes = ['create-draft-email', 'send-draft-message', 'create-calendar-event'];
+  const writes = ['create-draft-email', 'update-mail-message', 'create-calendar-event'];
 
   function makePolicy(extra?: Record<string, { allow?: string[]; deny?: string[] }>) {
     return Policy.fromDocument({

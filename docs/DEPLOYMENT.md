@@ -130,10 +130,13 @@ module "m365_mcp" {
       { id = local.graph_delegated["profile"],         type = "Scope" },
       { id = local.graph_delegated["email"],           type = "Scope" },
 
-      # Mail
+      # Mail — drafts only, no send. Mail.Send is deliberately omitted
+      # so the LLM can never send mail unilaterally. The send-draft-message
+      # tool does not exist on the server. Human reviews drafts in Outlook
+      # and clicks Send themselves. Tracked for future re-add (with
+      # approved-recipient guardrails) in ms-365-mcp-server#9.
       { id = local.graph_delegated["Mail.Read"],       type = "Scope" },
       { id = local.graph_delegated["Mail.ReadWrite"],  type = "Scope" },
-      { id = local.graph_delegated["Mail.Send"],       type = "Scope" },
 
       # Calendar
       { id = local.graph_delegated["Calendars.Read"],      type = "Scope" },
@@ -648,11 +651,10 @@ defaults:
 users:
   slyon@aretepartners.com:
     allow:
-      # Mail writes
+      # Mail writes (drafts only — no send tool exists)
       - create-draft-email
       - update-mail-message
       - add-mail-attachment
-      - send-draft-message
       - delete-mail-message
       # Calendar writes
       - create-calendar-event

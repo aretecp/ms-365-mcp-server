@@ -176,7 +176,7 @@ export const mailTools: readonly Tool[] = [
   {
     name: 'create-draft-email',
     description:
-      "Create a draft email in the signed-in user's Drafts folder. Returns the new message including its id. Does NOT send — call send-draft-message with that id when ready.",
+      "Create a draft email in the signed-in user's Drafts folder. Returns the new message including its id. The draft sits in Drafts until the human opens Outlook and clicks Send — this server has no send capability (see docs/DEPLOYMENT.md §3 on the deliberate Mail.Send exclusion).",
     method: 'POST',
     path: '/me/messages',
     scopes: ['Mail.ReadWrite'],
@@ -189,12 +189,13 @@ export const mailTools: readonly Tool[] = [
     ],
     llmTip:
       'Resolve recipient addresses with list-users (or a known contact) before drafting; do not invent SMTP addresses. ' +
-      'For HTML bodies set body.contentType to "html"; otherwise "text".',
+      'For HTML bodies set body.contentType to "html"; otherwise "text". ' +
+      'After creating the draft, tell the human it is waiting in their Drafts folder for review — the model cannot send it.',
   },
   {
     name: 'update-mail-message',
     description:
-      'Update fields on a mail message (draft) by id. Any field omitted is left unchanged. Use create-draft-email to start a new draft, this to amend it, send-draft-message to send.',
+      'Update fields on a mail message (draft) by id. Any field omitted is left unchanged. Use create-draft-email to start a new draft and this to amend it; sending is done by the human from Outlook (no send tool exists).',
     method: 'PATCH',
     path: '/me/messages/{message-id}',
     scopes: ['Mail.ReadWrite'],
@@ -208,21 +209,6 @@ export const mailTools: readonly Tool[] = [
         name: 'body',
         location: 'body',
         schema: messageWriteSchema,
-      },
-    ],
-  },
-  {
-    name: 'send-draft-message',
-    description:
-      "Send a draft message that's already in the user's Drafts folder by id. No request body. After success, the message moves to Sent Items.",
-    method: 'POST',
-    path: '/me/messages/{message-id}/send',
-    scopes: ['Mail.Send'],
-    params: [
-      {
-        name: 'message-id',
-        location: 'path',
-        schema: z.string().describe('Draft message id from create-draft-email'),
       },
     ],
   },

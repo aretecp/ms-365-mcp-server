@@ -13,7 +13,7 @@ describe('Policy.check', () => {
   it('denies tools missing from defaults.allow when there is no user entry (fail-closed)', () => {
     const policy = Policy.fromDocument({ defaults: { allow: ['get-me'] } });
     expect(
-      policy.check({ userPrincipalName: 'u@example.com', toolName: 'send-draft-message' })
+      policy.check({ userPrincipalName: 'u@example.com', toolName: 'delete-mail-message' })
     ).toBe(false);
   });
 
