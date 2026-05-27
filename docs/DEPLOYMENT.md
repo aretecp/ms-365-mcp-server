@@ -167,10 +167,23 @@ module "m365_mcp" {
     ]
   }]
 
-  # Per-user access. Admins (in locals.admin_users) get an "Admin" role
-  # assignment so they can use the server and edit policy.
-  roles          = ["Admin"]
-  assigned_users = local.admin_users
+  # Initial rollout: only slyon + dgiordano get the Admin role (the 1-2
+  # starter users from the deployment plan). Additional power users are
+  # unblocked via the server's policy.yaml allow-list — no Entra role
+  # assignment changes needed unless we expand beyond the starter pair.
+  owners = [for u in data.azuread_user.m365_mcp_owners : u.object_id]
+
+  roles = ["Admin"]
+  assigned_users = [
+    { email = "slyon@aretepartners.com", role = "Admin" },
+    { email = "dgiordano@aretepartners.com", role = "Admin" },
+  ]
+}
+
+# Owners block — matches arilearn.tf's pattern.
+data "azuread_user" "m365_mcp_owners" {
+  for_each            = toset(["slyon@aretepartners.com", "dgiordano@aretepartners.com"])
+  user_principal_name = each.value
 }
 
 module "m365_mcp_secrets" {
