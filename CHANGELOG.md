@@ -1,3 +1,18 @@
+## [2.0.0](https://github.com/aretecp/ms-365-mcp-server/compare/v1.0.0...v2.0.0) (2026-05-27)
+
+### ⚠ BREAKING CHANGES
+
+* **mail:** send-draft-message tool removed. Any policy file that
+referenced it in users.<upn>.allow should drop the line; the policy
+loader does not validate tool names against the live surface so stale
+entries are silently ignored.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+### New Features
+
+* **mail:** drop send-draft-message tool + Mail.Send scope ([f6fd6a6](https://github.com/aretecp/ms-365-mcp-server/commit/f6fd6a657230989792b43edc92109627f9cf9149)), closes [#9](https://github.com/aretecp/ms-365-mcp-server/issues/9)
+
 ## [1.0.0](https://github.com/aretecp/ms-365-mcp-server/compare/v0.112.2...v1.0.0) (2026-05-27)
 
 ### ⚠ BREAKING CHANGES
