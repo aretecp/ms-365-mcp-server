@@ -1,0 +1,71 @@
+# Dev Docker Compose for the M365 MCP Server.
+#
+# Co-resident with the prod stack on the shared VPS:
+#   - Different container name (`m365_mcp_dev`) so it doesn't collide.
+#   - Different Traefik router (`m365-mcp-dev`) with the dev hostname.
+#   - Different `data/` and `policy/` directories so dev sessions and dev
+#     policy never bleed into prod.
+#
+# Triggered from `.github/workflows/deploy-dev.yml` on push to `develop`,
+# or via workflow_dispatch.
+
+services:
+  m365-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: ghcr.io/aretecp/m365-mcp-server:${IMAGE_TAG:-dev}
+    container_name: m365_mcp_dev
+    restart: unless-stopped
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.m365-mcp-dev.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.dev.areteintelligence.ai}`)"
+      - "traefik.http.routers.m365-mcp-dev.entrypoints=websecure"
+      - "traefik.http.routers.m365-mcp-dev.tls=true"
+      - "traefik.http.routers.m365-mcp-dev.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.m365-mcp-dev.middlewares=security-headers@file,rate-limit@file"
+      - "traefik.http.services.m365-mcp-dev.loadbalancer.server.port=3000"
+      - "traefik.docker.network=aichat_openwebui-network"
+
+    networks:
+      - default
+      - aichat_openwebui-network
+
+    environment:
+      MS365_MCP_CLIENT_ID:     "${MICROSOFT_CLIENT_ID:?MICROSOFT_CLIENT_ID is required}"
+      MS365_MCP_CLIENT_SECRET: "${MICROSOFT_CLIENT_SECRET:?MICROSOFT_CLIENT_SECRET is required}"
+      MS365_MCP_TENANT_ID:     "${MICROSOFT_TENANT_ID:?MICROSOFT_TENANT_ID is required}"
+      MS365_MCP_SESSION_KEY:   "${MS365_MCP_SESSION_KEY:?MS365_MCP_SESSION_KEY is required}"
+      MS365_MCP_POLICY_ADMINS: "${MS365_MCP_POLICY_ADMINS:?MS365_MCP_POLICY_ADMINS is required}"
+
+      MS365_MCP_PUBLIC_URL:     "https://${PUBLIC_HOSTNAME:-m365.mcp.dev.areteintelligence.ai}"
+      MS365_MCP_CORS_ORIGIN:    "https://claude.ai"
+      MS365_MCP_ALLOWED_REDIRECT_URIS: "https://claude.ai/api/mcp/auth_callback"
+
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      VERSION:     ${VERSION:-}
+
+      MS365_MCP_OUTPUT_FORMAT: "toon"
+      NODE_ENV: "production"
+
+    volumes:
+      - ./data-dev:/data
+      - ./policy-dev:/policy
+
+    healthcheck:
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://127.0.0.1:3000/.well-known/oauth-authorization-server', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  aichat_openwebui-network:
+    external: true

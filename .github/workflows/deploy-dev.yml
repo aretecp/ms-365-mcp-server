@@ -1,0 +1,98 @@
+name: Deploy Dev
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to deploy"
+        required: false
+        default: "develop"
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: development
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Load app secrets from Infisical (OIDC)
+        uses: aretecp/github-actions/actions/load-infisical-secrets@v1
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_OIDC_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_INTERNAL_PROJECT_SLUG }}
+          environment: dev
+          path: /m365-mcp
+
+      - name: Load shared infra secrets from Infisical (OIDC)
+        uses: aretecp/github-actions/actions/load-infisical-secrets@v1
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_OIDC_IDENTITY_ID }}
+          project-slug: arete-shared
+          environment: dev
+          path: /
+          recursive: true
+
+      - name: Join Tailscale
+        uses: aretecp/github-actions/actions/tailscale-connect@v1
+        with:
+          authkey: ${{ env.TAILSCALE_AUTHKEY }}
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ env.VPS_TAILSCALE_IP }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ env.VPS_SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            REPO_DIR="$HOME/ms-365-mcp-server"
+
+            # First-time clone guard — do not clobber existing prod checkout.
+            # Unlike areteos we use the same dir for prod and dev checkouts
+            # because dev deploys checkout the develop branch while prod
+            # deploys a tag. The compose files use different container names
+            # and data dirs so the two co-exist on the same VPS.
+            if [ ! -d "$REPO_DIR/.git" ]; then
+              echo "Cloning ms-365-mcp-server into $REPO_DIR (first-time dev setup)..."
+              git clone https://github.com/aretecp/ms-365-mcp-server.git "$REPO_DIR"
+            fi
+
+            cd "$REPO_DIR"
+
+            BRANCH="${{ github.event.inputs.branch || github.ref_name }}"
+            echo "Deploying branch: $BRANCH"
+
+            cat > .env.dev <<'ENVEOF'
+            MICROSOFT_CLIENT_ID=${{ env.MICROSOFT_CLIENT_ID }}
+            MICROSOFT_CLIENT_SECRET=${{ env.MICROSOFT_CLIENT_SECRET }}
+            MICROSOFT_TENANT_ID=${{ env.MICROSOFT_TENANT_ID }}
+            MS365_MCP_SESSION_KEY=${{ env.MS365_MCP_SESSION_KEY }}
+            MS365_MCP_POLICY_ADMINS=${{ env.MS365_MCP_POLICY_ADMINS }}
+            PUBLIC_HOSTNAME=m365.mcp.dev.areteintelligence.ai
+            ENVIRONMENT=development
+            ENVEOF
+            chmod 600 .env.dev
+
+            git fetch origin
+            git checkout "$BRANCH"
+            git pull origin "$BRANCH"
+
+            docker compose --env-file .env.dev -f docker-compose.dev.yml up -d --build
+
+            curl -fsSL "https://raw.githubusercontent.com/aretecp/github-actions/v1/scripts/wait-for-healthy.sh" \
+              | TIMEOUT_SECONDS=150 \
+                COMPOSE_FILE=docker-compose.dev.yml \
+                ENV_FILE=.env.dev \
+                LOG_TAIL=100 \
+                bash -s -- m365_mcp_dev

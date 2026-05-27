@@ -1,32 +1,30 @@
 name: Release
 
+# Thin shim. Logic lives in aretecp/github-actions/.github/workflows/release-shared.yml.
+# Bump the @v1 ref there to pick up patch/minor fixes automatically.
+
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      major:
+        description: "Force major version bump (e.g. 1.x.x → 2.0.0)"
+        required: false
+        type: boolean
+        default: false
 
+# Permissions required by release-shared.yml; reusable workflows can only
+# use what the caller has granted.
 permissions:
   contents: write
   issues: write
   pull-requests: write
-  id-token: write
+  actions: write
 
 jobs:
   release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: 'npm'
-      - run: npm i -D patch-package
-      - run: npm ci
-      - run: npm run generate
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npm run build
-      - run: npm test
-      - run: npx semantic-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    uses: aretecp/github-actions/.github/workflows/release-shared.yml@v1
+    with:
+      major: ${{ inputs.major || false }}
+    secrets: inherit

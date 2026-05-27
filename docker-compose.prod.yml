@@ -1,0 +1,80 @@
+# Production Docker Compose for the M365 MCP Server.
+#
+# Mirrors the pattern in arilearn-phx / areteos / contact-intelligence:
+#   - No host port publishing — Traefik on the VPS routes via the shared
+#     `aichat_openwebui-network` docker network.
+#   - TLS terminated by Traefik with the `letsencrypt` certresolver.
+#   - Secrets arrive via a `.env` file written by GitHub Actions on the VPS,
+#     then `docker compose --env-file .env -f docker-compose.prod.yml up -d`.
+#     The `${X:?Set X}` interpolation belt-and-suspenders the .env presence.
+#
+# Manual invocation (rare, for first-time bootstrap):
+#   infisical run --env prod --path /m365-mcp -- docker compose -f docker-compose.prod.yml up -d --build
+#
+# See docs/DEPLOYMENT.md §7 for the full setup.
+
+services:
+  m365-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    image: ghcr.io/aretecp/m365-mcp-server:${IMAGE_TAG:-latest}
+    container_name: m365_mcp
+    restart: unless-stopped
+
+    # No published ports — Traefik discovers the service over the shared network.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.m365-mcp.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.areteintelligence.ai}`)"
+      - "traefik.http.routers.m365-mcp.entrypoints=websecure"
+      - "traefik.http.routers.m365-mcp.tls=true"
+      - "traefik.http.routers.m365-mcp.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.m365-mcp.middlewares=security-headers@file,rate-limit@file"
+      - "traefik.http.services.m365-mcp.loadbalancer.server.port=3000"
+      - "traefik.docker.network=aichat_openwebui-network"
+
+    networks:
+      - default
+      - aichat_openwebui-network
+
+    environment:
+      # Wired from the .env file written by the deploy workflow.
+      MS365_MCP_CLIENT_ID:     "${MICROSOFT_CLIENT_ID:?MICROSOFT_CLIENT_ID is required}"
+      MS365_MCP_CLIENT_SECRET: "${MICROSOFT_CLIENT_SECRET:?MICROSOFT_CLIENT_SECRET is required}"
+      MS365_MCP_TENANT_ID:     "${MICROSOFT_TENANT_ID:?MICROSOFT_TENANT_ID is required}"
+      MS365_MCP_SESSION_KEY:   "${MS365_MCP_SESSION_KEY:?MS365_MCP_SESSION_KEY is required}"
+      MS365_MCP_POLICY_ADMINS: "${MS365_MCP_POLICY_ADMINS:?MS365_MCP_POLICY_ADMINS is required}"
+
+      # Public URL + CORS + redirect allowlist — fixed for the prod deploy.
+      MS365_MCP_PUBLIC_URL:     "https://${PUBLIC_HOSTNAME:-m365.mcp.areteintelligence.ai}"
+      MS365_MCP_CORS_ORIGIN:    "https://claude.ai"
+      MS365_MCP_ALLOWED_REDIRECT_URIS: "https://claude.ai/api/mcp/auth_callback"
+
+      # Release metadata (visible in /admin and logs).
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      VERSION:     ${VERSION:-}
+
+      # Output + runtime tuning.
+      MS365_MCP_OUTPUT_FORMAT: "toon"
+      NODE_ENV: "production"
+
+    volumes:
+      - ./policy:/policy
+      - ./data:/data
+
+    healthcheck:
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://127.0.0.1:3000/.well-known/oauth-authorization-server', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  aichat_openwebui-network:
+    external: true
