@@ -1,3 +1,11 @@
+## [2.2.2](https://github.com/aretecp/ms-365-mcp-server/compare/v2.2.1...v2.2.2) (2026-05-28)
+
+### Bug Fixes
+
+* **ci:** create bind-mount dirs owned by uid 1000 before docker compose up ([c8c1175](https://github.com/aretecp/ms-365-mcp-server/commit/c8c117595d61f309bfeffbe9bdf9bd42c35a8e3b))
+* **deploy:** seed /policy/policy.yaml from example on first container start ([a32bf07](https://github.com/aretecp/ms-365-mcp-server/commit/a32bf0777cfa58311f430b03e6ba225b7faaa56b))
+* **deploy:** use named docker volumes for /data and /policy ([f862cc6](https://github.com/aretecp/ms-365-mcp-server/commit/f862cc6b5f9d55db986abc518124aae6c0bf9171))
+
 ## [2.2.1](https://github.com/aretecp/ms-365-mcp-server/compare/v2.2.0...v2.2.1) (2026-05-28)
 
 ### Bug Fixes
