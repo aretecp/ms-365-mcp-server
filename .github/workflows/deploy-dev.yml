@@ -77,14 +77,6 @@ jobs:
             BRANCH="${{ github.event.inputs.branch || github.ref_name }}"
             echo "Deploying branch: $BRANCH"
 
-            # Ensure host bind-mount targets exist and are owned by uid 1000
-            # (the `node` user inside the container). Without this, docker
-            # compose auto-creates the dirs as root on first run and the
-            # container fails with "unable to open database file" when
-            # SQLite tries to write. Re-running is idempotent.
-            mkdir -p data-dev policy-dev
-            sudo -n chown -R 1000:1000 data-dev policy-dev
-
             cat > .env.dev <<'ENVEOF'
             MICROSOFT_CLIENT_ID=${{ env.MICROSOFT_CLIENT_ID }}
             MICROSOFT_CLIENT_SECRET=${{ env.MICROSOFT_CLIENT_SECRET }}

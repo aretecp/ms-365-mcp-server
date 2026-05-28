@@ -64,27 +64,16 @@ jobs:
             set -euo pipefail
             REPO_DIR="$HOME/ms-365-mcp-server"
 
-            # First-time bootstrap is self-serve: clone if missing.
-            # The compose file's `${X:?...}` interpolation still hard-fails
-            # if Infisical hasn't been populated, so a half-configured prod
-            # can't accidentally launch.
             if [ ! -d "$REPO_DIR/.git" ]; then
-              echo "Cloning ms-365-mcp-server into $REPO_DIR (first-time prod setup)..."
-              git clone https://github.com/aretecp/ms-365-mcp-server.git "$REPO_DIR"
+              echo "ERROR: $REPO_DIR does not exist. Prod deploy refuses to clone."
+              echo "First-time bootstrap is manual — see docs/DEPLOYMENT.md §7.5."
+              exit 1
             fi
 
             cd "$REPO_DIR"
 
             VERSION="${{ inputs.version || github.ref_name || 'main' }}"
             echo "Deploying version: $VERSION"
-
-            # Ensure host bind-mount targets exist and are owned by uid 1000
-            # (the `node` user inside the container). Without this, docker
-            # compose auto-creates the dirs as root on first run and the
-            # container fails with "unable to open database file" when
-            # SQLite tries to write. Re-running is idempotent.
-            mkdir -p data policy
-            sudo -n chown -R 1000:1000 data policy
 
             cat > .env <<'ENVEOF'
             MICROSOFT_CLIENT_ID=${{ env.MICROSOFT_CLIENT_ID }}
