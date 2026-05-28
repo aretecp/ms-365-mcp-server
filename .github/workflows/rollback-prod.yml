@@ -20,6 +20,20 @@ jobs:
       contents: read
       id-token: write
     steps:
+      # Load shared infra secrets FIRST so per-project keys from /m365-mcp
+      # (loaded next) can override any collisions with arete-shared subfolders
+      # (e.g. arete-shared/terraform/entra/MICROSOFT_* would otherwise shadow
+      # this app's own Entra client credentials).
+      - name: Load shared infra secrets from Infisical (OIDC)
+        uses: aretecp/github-actions/actions/load-infisical-secrets@v1
+        with:
+          method: oidc
+          identity-id: ${{ vars.INFISICAL_OIDC_IDENTITY_ID }}
+          project-slug: ${{ vars.INFISICAL_SHARED_PROJECT_SLUG }}
+          environment: prod
+          path: /
+          recursive: true
+
       - name: Load app secrets from Infisical (OIDC)
         uses: aretecp/github-actions/actions/load-infisical-secrets@v1
         with:
@@ -28,16 +42,6 @@ jobs:
           project-slug: ${{ vars.INFISICAL_INTERNAL_PROJECT_SLUG }}
           environment: prod
           path: /m365-mcp
-
-      - name: Load shared infra secrets from Infisical (OIDC)
-        uses: aretecp/github-actions/actions/load-infisical-secrets@v1
-        with:
-          method: oidc
-          identity-id: ${{ vars.INFISICAL_OIDC_IDENTITY_ID }}
-          project-slug: arete-shared
-          environment: prod
-          path: /
-          recursive: true
 
       - name: Join Tailscale
         uses: aretecp/github-actions/actions/tailscale-connect@v1
