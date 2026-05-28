@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { buildAdminRouter } from '../src/admin/router.ts';
 import { ADMIN_COOKIE_NAME } from '../src/admin/middleware.ts';
+import { generateCsrfToken } from '../src/admin/csrf.ts';
 import { PolicyManager } from '../src/policy/index.ts';
 import type { SessionManager } from '../src/sessions/manager.ts';
 import type { Session } from '../src/sessions/store.ts';
@@ -33,6 +34,7 @@ interface Harness {
   policyFile: string;
   cleanup: () => void;
   adminSessionId: string;
+  sessionManager: SessionManager;
 }
 
 function buildHarness(opts: { admin?: boolean } = { admin: true }): Harness {
@@ -78,6 +80,7 @@ function buildHarness(opts: { admin?: boolean } = { admin: true }): Harness {
     app,
     policyFile,
     adminSessionId,
+    sessionManager,
     cleanup: () => {
       try {
         fs.rmSync(path.dirname(policyFile), { recursive: true, force: true });
@@ -298,5 +301,82 @@ describe('GET /admin/dashboard', () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('No per-user overrides');
+  });
+});
+
+describe('POST /admin/logout', () => {
+  const originalKey = process.env.MS365_MCP_SESSION_KEY;
+  let harness: Harness;
+
+  beforeEach(() => {
+    process.env.MS365_MCP_SESSION_KEY = crypto.randomBytes(32).toString('base64');
+    toolCallLog.clear();
+  });
+
+  afterEach(() => {
+    harness?.cleanup();
+    toolCallLog.clear();
+    if (originalKey === undefined) delete process.env.MS365_MCP_SESSION_KEY;
+    else process.env.MS365_MCP_SESSION_KEY = originalKey;
+  });
+
+  it('POST with valid CSRF redirects to /admin/login and clears the cookie', async () => {
+    harness = buildHarness();
+    const csrfToken = generateCsrfToken(harness.adminSessionId);
+    const res = await request(harness.app)
+      .post('/admin/logout')
+      .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`)
+      .type('form')
+      .send({ csrf_token: csrfToken });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/admin/login');
+    // Cookie should be cleared (Set-Cookie header present with empty or past-expiry value)
+    const setCookie = res.headers['set-cookie'] as string[] | string | undefined;
+    const cookieHeader = Array.isArray(setCookie) ? setCookie.join('; ') : (setCookie ?? '');
+    expect(cookieHeader).toContain(ADMIN_COOKIE_NAME);
+  });
+
+  it('POST with valid CSRF calls sessionManager.revokeSession', async () => {
+    harness = buildHarness();
+    const csrfToken = generateCsrfToken(harness.adminSessionId);
+    await request(harness.app)
+      .post('/admin/logout')
+      .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`)
+      .type('form')
+      .send({ csrf_token: csrfToken });
+
+    expect(
+      (harness.sessionManager as unknown as { revokeSession: ReturnType<typeof vi.fn> })
+        .revokeSession
+    ).toHaveBeenCalledWith(harness.adminSessionId);
+  });
+
+  it('POST without CSRF token returns 403', async () => {
+    harness = buildHarness();
+    const res = await request(harness.app)
+      .post('/admin/logout')
+      .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`)
+      .type('form')
+      .send({ csrf_token: 'bad-token' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('POST without session cookie returns 403', async () => {
+    harness = buildHarness();
+    const res = await request(harness.app)
+      .post('/admin/logout')
+      .type('form')
+      .send({ csrf_token: 'irrelevant' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('GET /admin/logout returns 405', async () => {
+    harness = buildHarness();
+    const res = await request(harness.app).get('/admin/logout');
+    expect(res.status).toBe(405);
+    expect(res.headers['allow']).toBe('POST');
   });
 });

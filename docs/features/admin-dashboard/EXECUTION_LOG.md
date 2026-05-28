@@ -59,3 +59,35 @@ Estimated scope: L
 ---
 
 ## [2026-05-28 00:03] — Phase 3: Policy summary card
+
+- **Action**: Added `PolicySummary` type + `Policy.summary()` + `PolicyManager.summary()` to `src/policy/index.ts`. Added `policySummaryCard()` template to `src/admin/templates.ts`. Wired into dashboard handler. Added 6 policy unit tests + 2 dashboard integration tests.
+- **Files changed**: `src/policy/index.ts`, `src/admin/templates.ts`, `src/admin/router.ts`, `test/policy.test.ts`, `test/admin-dashboard.test.ts`
+- **Result**: success — 230/230 tests, verify clean, committed + pushed to develop
+
+---
+
+## [2026-05-28 00:04] — Phase 4: Logout button + header polish
+
+- **Action**: Replaced `GET /admin/logout` with 405. Added `POST /admin/logout` with CSRF verification, session revocation, cookie clearing, and redirect to /admin/login. Header bar (with sign-out form) already shipped in Phase 2. Added 5 logout tests.
+- **Files changed**: `src/admin/router.ts`, `test/admin-dashboard.test.ts`
+- **Result**: success — 235/235 tests, verify clean, committed + pushed to develop
+
+---
+
+## Final Summary
+
+All 4 phases complete. Plan status set to Done.
+
+**Files created/changed**:
+
+- `src/admin/tool-call-log.ts` (new) — ring buffer, ToolCallStatus enum, redaction helpers
+- `src/tool-runtime.ts` — instrumented executeTool + registerUtilityToolWithMcp
+- `src/admin/templates.ts` — dashboardPage, toolCallTable, headerBar, policySummaryCard, extended STYLE
+- `src/admin/router.ts` — GET /admin/dashboard, POST /admin/logout, 405 on GET /admin/logout, updated redirects
+- `src/policy/index.ts` — PolicySummary type, Policy.summary(), PolicyManager.summary()
+- `test/tool-call-log.test.ts` (new) — 20 unit tests
+- `test/tool-runtime-logging.test.ts` (new) — 8 integration tests
+- `test/admin-dashboard.test.ts` (new) — 19 integration tests
+- `test/policy.test.ts` — 6 new summary tests added
+
+**Test totals**: 235 tests across 28 test files, all passing. 4 commits pushed to develop.

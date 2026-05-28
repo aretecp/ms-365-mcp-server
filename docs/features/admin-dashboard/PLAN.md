@@ -1,6 +1,6 @@
 # Plan: Admin Dashboard Redesign
 
-**Status**: In Progress
+**Status**: Done
 **Created**: 2026-05-28
 **Last updated**: 2026-05-28
 
@@ -83,11 +83,11 @@ No brainstorm/research doc exists for this feature — direction came from a 1:1
 
 ### Phase 4 — Logout button + header polish
 
-- [ ] Add `POST /admin/logout` handler in `src/admin/router.ts`: verify CSRF, revoke session, clear cookie, redirect to `/admin/login`. Mirror the existing GET logout's logic.
-- [ ] Header bar template: signed-in UPN on the left, `<form method="post" action="/admin/logout">` with hidden CSRF token + Logout button on the right.
-- [ ] Apply the header on both `/admin/dashboard` and `/admin/policy` (operators will hop between them).
-- [ ] Replace `GET /admin/logout` with a `405 Method Not Allowed`. **Decided**: cleaner than a courtesy redirect; no external link relies on the GET today.
-- [ ] Test: POST without CSRF → 403, POST with CSRF → 302 + cookie cleared + `sessionManager.revokeSession` called.
+- [x] Add `POST /admin/logout` handler in `src/admin/router.ts`: verify CSRF, revoke session, clear cookie, redirect to `/admin/login`. Mirror the existing GET logout's logic.
+- [x] Header bar template: signed-in UPN on the left, `<form method="post" action="/admin/logout">` with hidden CSRF token + Logout button on the right.
+- [x] Apply the header on both `/admin/dashboard` and `/admin/policy` (operators will hop between them).
+- [x] Replace `GET /admin/logout` with a `405 Method Not Allowed`. **Decided**: cleaner than a courtesy redirect; no external link relies on the GET today.
+- [x] Test: POST without CSRF → 403, POST with CSRF → 302 + cookie cleared + `sessionManager.revokeSession` called.
 
 **Files touched**: `src/admin/router.ts`, `src/admin/templates.ts`, `test/admin-dashboard.test.ts` (extend) or new `test/admin-logout.test.ts`.
 **Rough size**: ~80 LOC prod + ~60 LOC tests. Quarter day.

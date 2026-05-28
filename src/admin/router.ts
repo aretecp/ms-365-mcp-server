@@ -200,15 +200,35 @@ export function buildAdminRouter(opts: AdminRouterOptions): Router {
     }
   });
 
-  // ----- GET /admin/logout -----
-  router.get('/logout', async (req, res) => {
+  // ----- GET /admin/logout — 405, replaced by POST -----
+  router.get('/logout', (_req, res) => {
+    res
+      .status(405)
+      .set('Allow', 'POST')
+      .type('html')
+      .send(errorPage(405, 'Logout requires a POST request. Use the Sign out button.'));
+  });
+
+  // ----- POST /admin/logout -----
+  router.post('/logout', async (req: AdminRequest, res: Response) => {
+    const csrfCandidate =
+      typeof req.body?.csrf_token === 'string' ? req.body.csrf_token : undefined;
+
+    // Read session id from cookie before potentially clearing it.
     const cookies = (req as Request & { cookies?: Record<string, string> }).cookies ?? {};
     const sessionId = cookies[ADMIN_COOKIE_NAME];
-    if (sessionId) {
-      await opts.sessionManager.revokeSession(sessionId).catch(() => {
-        /* best-effort */
-      });
+
+    // Verify CSRF — require a valid session to generate the expected token.
+    // If there is no session cookie, fail with 403 (nothing to revoke anyway).
+    if (!sessionId || !verifyCsrfToken(sessionId, csrfCandidate)) {
+      logger.warn('admin.logout.csrf_mismatch');
+      res.status(403).type('html').send(errorPage(403, 'CSRF token mismatch.'));
+      return;
     }
+
+    await opts.sessionManager.revokeSession(sessionId).catch(() => {
+      /* best-effort */
+    });
     res.clearCookie(ADMIN_COOKIE_NAME, { path: '/admin' });
     res.redirect('/admin/login');
   });
