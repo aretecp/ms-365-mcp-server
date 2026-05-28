@@ -41,8 +41,13 @@ Estimated scope: L
 
 ---
 
-## [2026-05-28 00:01] — Phase 1a: Create tool-call-log.ts
+## [2026-05-28 00:01] — Phase 1: Ring buffer + instrumentation
 
-- **Action**: Created `src/admin/tool-call-log.ts` with `ToolCallStatus` enum, `ToolCallEntry` type, `ToolCallLog` class (ring buffer), redaction helpers, and module-level singleton
-- **Files changed**: `src/admin/tool-call-log.ts` (new)
-- **Result**: success
+- **Action**: Created `src/admin/tool-call-log.ts` (ToolCallStatus, ToolCallEntry, ToolCallLog ring buffer, redactArgs/redactResponse, singleton). Instrumented `executeTool` and `registerUtilityToolWithMcp` in `src/tool-runtime.ts`. Wrote 20 unit tests in `test/tool-call-log.test.ts` and 8 integration tests in `test/tool-runtime-logging.test.ts`.
+- **Files changed**: `src/admin/tool-call-log.ts` (new), `src/tool-runtime.ts`, `test/tool-call-log.test.ts` (new), `test/tool-runtime-logging.test.ts` (new)
+- **Decisions**: pre-existing lint warnings in `graph-client.ts` + `logger.ts` not touched (pre-existing)
+- **Result**: success — 210/210 tests, `npm run verify` clean, committed + pushed to develop
+
+---
+
+## [2026-05-28 00:02] — Phase 2: Dashboard landing page + log table

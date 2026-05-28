@@ -16,7 +16,16 @@ import type { AppSecrets } from '../secrets.js';
 import { atomicWriteSync } from './atomic-write.js';
 import { generateCsrfToken, verifyCsrfToken } from './csrf.js';
 import { requireAdmin, ADMIN_COOKIE_NAME, type AdminRequest } from './middleware.js';
-import { ADMIN_CSP, errorPage, loginPage, policyEditorPage } from './templates.js';
+import {
+  ADMIN_CSP,
+  errorPage,
+  loginPage,
+  policyEditorPage,
+  dashboardPage,
+  type SortColumn,
+  type SortOrder,
+} from './templates.js';
+import { toolCallLog, type ToolCallEntry, type ToolCallStatus } from './tool-call-log.js';
 
 const ADMIN_PKCE_TTL_MS = 10 * 60 * 1000;
 const ADMIN_PKCE_MAX_ENTRIES = 256;
@@ -85,7 +94,7 @@ export function buildAdminRouter(opts: AdminRouterOptions): Router {
 
   // ----- GET /admin (index) -----
   router.get('/', (_req, res) => {
-    res.redirect('/admin/policy');
+    res.redirect('/admin/dashboard');
   });
 
   // ----- GET /admin/login -----
@@ -176,7 +185,7 @@ export function buildAdminRouter(opts: AdminRouterOptions): Router {
         path: '/admin',
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       });
-      res.redirect('/admin/policy');
+      res.redirect('/admin/dashboard');
     } catch (err) {
       if (err instanceof OAuthUpstreamError) {
         const { status, body } = toOAuthErrorResponse(err);
@@ -202,6 +211,66 @@ export function buildAdminRouter(opts: AdminRouterOptions): Router {
     }
     res.clearCookie(ADMIN_COOKIE_NAME, { path: '/admin' });
     res.redirect('/admin/login');
+  });
+
+  // ----- GET /admin/dashboard -----
+  router.get('/dashboard', guard, (req: AdminRequest, res: Response) => {
+    const rawSort = typeof req.query.sort === 'string' ? req.query.sort : 'ts';
+    const rawOrder = typeof req.query.order === 'string' ? req.query.order : 'desc';
+    const filterStatus = typeof req.query.status === 'string' ? req.query.status : '';
+
+    const validSortColumns: SortColumn[] = ['ts', 'upn', 'toolName', 'status', 'latencyMs'];
+    const sort: SortColumn = validSortColumns.includes(rawSort as SortColumn)
+      ? (rawSort as SortColumn)
+      : 'ts';
+    const order: SortOrder = rawOrder === 'asc' ? 'asc' : 'desc';
+
+    const validStatuses: ToolCallStatus[] = [
+      'allowed',
+      'denied_by_policy',
+      'precondition_failed',
+      'graph_error',
+      'unauthorized',
+    ];
+
+    let rows: ToolCallEntry[] = toolCallLog.snapshot();
+
+    // Apply status filter
+    if (filterStatus && validStatuses.includes(filterStatus as ToolCallStatus)) {
+      rows = rows.filter((r) => r.status === filterStatus);
+    }
+
+    // Apply sort (snapshot() already newest-first; re-sort for other columns)
+    rows = [...rows].sort((a, b) => {
+      let cmp = 0;
+      if (sort === 'ts') {
+        cmp = a.ts - b.ts;
+      } else if (sort === 'latencyMs') {
+        cmp = a.latencyMs - b.latencyMs;
+      } else {
+        const av = (a[sort] ?? '').toString().toLowerCase();
+        const bv = (b[sort] ?? '').toString().toLowerCase();
+        cmp = av < bv ? -1 : av > bv ? 1 : 0;
+      }
+      return order === 'desc' ? -cmp : cmp;
+    });
+
+    const csrfToken = generateCsrfToken(req.admin!.session.sessionId);
+    res.setHeader('Content-Security-Policy', ADMIN_CSP);
+    res.type('html').send(
+      dashboardPage({
+        upn: req.admin!.upn,
+        csrfToken,
+        rows,
+        sort,
+        order,
+        filterStatus:
+          filterStatus && validStatuses.includes(filterStatus as ToolCallStatus)
+            ? filterStatus
+            : '',
+        policySummaryHtml: '<!-- policy summary card: Phase 3 -->',
+      })
+    );
   });
 
   // ----- GET /admin/policy -----

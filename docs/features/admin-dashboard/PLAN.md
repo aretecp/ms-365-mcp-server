@@ -56,16 +56,16 @@ No brainstorm/research doc exists for this feature — direction came from a 1:1
 
 ### Phase 2 — Dashboard landing page with log table
 
-- [ ] Add `dashboardPage({ upn, csrfToken, rows, sort, order, filterStatus })` to `src/admin/templates.ts`. Renders header bar + table only (summary card lands in phase 3 — stub the section with a placeholder div).
-- [ ] Add `toolCallTable(rows, currentSort, currentOrder, currentFilter)` builder. Columns: ts (relative + absolute on hover via `title` attr), UPN, tool name, status (color-coded span via inline class), latency ms, expand toggle.
-- [ ] Expand-in-row: use `<details><summary>` semantics — pure HTML, no JS, no CSP impact. Body shows `argsExcerpt` + `responseExcerpt` / `errorText` in `<pre>`.
-- [ ] Sortable columns rendered as `<a href="?sort=COL&order=…">` links. Filter via status dropdown wrapped in a `<form method="get">` — CSP `form-action 'self'` already allows this.
-- [ ] Extend `STYLE`: `.table { width: 100%; border-collapse: collapse; ... }`, `.status-allowed/.status-denied/.status-error`, `.header-bar { display: flex; ... }`.
-- [ ] `GET /admin/dashboard` handler in `src/admin/router.ts` (guarded by `requireAdmin`): read `toolCallLog.snapshot()`, apply server-side sort + filter, render `dashboardPage`.
-- [ ] Change `GET /admin/` (currently redirects to `/admin/policy`) → redirect to `/admin/dashboard`.
-- [ ] Update the post-login redirect in `GET /admin/callback` from `/admin/policy` to `/admin/dashboard`.
-- [ ] Add a "Edit policy YAML" button on the dashboard linking to `/admin/policy` (existing editor untouched).
-- [ ] Write `test/admin-dashboard.test.ts`: anonymous → 401, mortal user → 403, admin sees table, sort/filter query params reorder/restrict rows, expanded `<details>` content present in HTML.
+- [x] Add `dashboardPage({ upn, csrfToken, rows, sort, order, filterStatus })` to `src/admin/templates.ts`. Renders header bar + table only (summary card lands in phase 3 — stub the section with a placeholder div).
+- [x] Add `toolCallTable(rows, currentSort, currentOrder, currentFilter)` builder. Columns: ts (relative + absolute on hover via `title` attr), UPN, tool name, status (color-coded span via inline class), latency ms, expand toggle.
+- [x] Expand-in-row: use `<details><summary>` semantics — pure HTML, no JS, no CSP impact. Body shows `argsExcerpt` + `responseExcerpt` / `errorText` in `<pre>`.
+- [x] Sortable columns rendered as `<a href="?sort=COL&order=…">` links. Filter via status dropdown wrapped in a `<form method="get">` — CSP `form-action 'self'` already allows this.
+- [x] Extend `STYLE`: `.table { width: 100%; border-collapse: collapse; ... }`, `.status-allowed/.status-denied/.status-error`, `.header-bar { display: flex; ... }`.
+- [x] `GET /admin/dashboard` handler in `src/admin/router.ts` (guarded by `requireAdmin`): read `toolCallLog.snapshot()`, apply server-side sort + filter, render `dashboardPage`.
+- [x] Change `GET /admin/` (currently redirects to `/admin/policy`) → redirect to `/admin/dashboard`.
+- [x] Update the post-login redirect in `GET /admin/callback` from `/admin/policy` to `/admin/dashboard`.
+- [x] Add a "Edit policy YAML" button on the dashboard linking to `/admin/policy` (existing editor untouched).
+- [x] Write `test/admin-dashboard.test.ts`: anonymous → 401, mortal user → 403, admin sees table, sort/filter query params reorder/restrict rows, expanded `<details>` content present in HTML.
 
 **Files touched**: `src/admin/templates.ts`, `src/admin/router.ts`, one new test file.
 **Rough size**: ~250 LOC prod + ~150 LOC tests. Half to full day.
