@@ -1,3 +1,12 @@
+## [2.3.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.2.4...v2.3.0) (2026-05-28)
+
+### New Features
+
+* admin dashboard landing page with tool call log table ([8ba3c50](https://github.com/aretecp/ms-365-mcp-server/commit/8ba3c507e037029723ac23079a8e4ba5deece217))
+* CSRF-protected POST /admin/logout, replace GET with 405 ([5c52f0b](https://github.com/aretecp/ms-365-mcp-server/commit/5c52f0b6272e3fb2cf7f818b4fb61571024959ca))
+* policy summary card on admin dashboard ([235c523](https://github.com/aretecp/ms-365-mcp-server/commit/235c5231f07716ede9cb6e837959ae75442eb71c))
+* ring buffer instrumentation for tool call logging ([818890e](https://github.com/aretecp/ms-365-mcp-server/commit/818890e5c14882bf4fb9e234c22dc49f6a5b2b78))
+
 ## [2.2.4](https://github.com/aretecp/ms-365-mcp-server/compare/v2.2.3...v2.2.4) (2026-05-28)
 
 ### Bug Fixes
