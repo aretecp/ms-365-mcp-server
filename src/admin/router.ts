@@ -268,7 +268,7 @@ export function buildAdminRouter(opts: AdminRouterOptions): Router {
           filterStatus && validStatuses.includes(filterStatus as ToolCallStatus)
             ? filterStatus
             : '',
-        policySummaryHtml: '<!-- policy summary card: Phase 3 -->',
+        policySummary: opts.policyManager.summary(),
       })
     );
   });

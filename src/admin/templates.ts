@@ -8,6 +8,7 @@
  * as a defense in depth.
  */
 import type { ToolCallEntry, ToolCallStatus } from './tool-call-log.js';
+import type { PolicySummary } from '../policy/index.js';
 
 /** Returned by every admin handler. */
 // form-action allows the POST /admin/login → 302 to login.microsoftonline.com
@@ -262,6 +263,59 @@ export function toolCallTable(
 }
 
 // ---------------------------------------------------------------------------
+// Policy summary card
+// ---------------------------------------------------------------------------
+
+export function policySummaryCard(summary: PolicySummary): string {
+  const defaultPills =
+    summary.defaultAllow.length > 0
+      ? summary.defaultAllow
+          .map((t) => `<span class="tool-pill allow">${escapeHtml(t)}</span>`)
+          .join(' ')
+      : '<em>none</em>';
+
+  const userRows =
+    summary.users.length > 0
+      ? summary.users
+          .map((u) => {
+            const allowPills =
+              u.allow.length > 0
+                ? u.allow
+                    .map((t) => `<span class="tool-pill allow">${escapeHtml(t)}</span>`)
+                    .join(' ')
+                : '';
+            const denyPills =
+              u.deny.length > 0
+                ? u.deny
+                    .map((t) => `<span class="tool-pill deny">${escapeHtml(t)}</span>`)
+                    .join(' ')
+                : '';
+            const diffParts: string[] = [];
+            if (allowPills) diffParts.push(`<span>+allow: ${allowPills}</span>`);
+            if (denyPills) diffParts.push(`<span>−deny: ${denyPills}</span>`);
+            const diff = diffParts.length > 0 ? diffParts.join(' ') : '<em>inherits defaults</em>';
+            return `<div class="user-row"><span class="upn"><code>${escapeHtml(u.upn)}</code></span>${diff}</div>`;
+          })
+          .join('')
+      : '<p style="color:#6e6e73;font-size:0.875rem">No per-user overrides.</p>';
+
+  return `<div class="policy-card">
+    <div class="card-header">
+      <h2>Policy summary</h2>
+      <a href="/admin/policy"><button type="button" class="secondary" style="font-size:0.85rem;padding:0.3rem 0.75rem">Edit YAML</button></a>
+    </div>
+    <div class="policy-section">
+      <div class="policy-section-label">Default allow</div>
+      <div>${defaultPills}</div>
+    </div>
+    <div class="policy-section">
+      <div class="policy-section-label">Per-user overrides</div>
+      ${userRows}
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard page
 // ---------------------------------------------------------------------------
 
@@ -272,8 +326,7 @@ export interface DashboardState {
   sort: SortColumn;
   order: SortOrder;
   filterStatus: string;
-  /** Placeholder until Phase 3 wires in the policy summary card. */
-  policySummaryHtml: string;
+  policySummary: PolicySummary;
 }
 
 export function headerBar(upn: string, csrfToken: string): string {
@@ -297,12 +350,13 @@ export function headerBar(upn: string, csrfToken: string): string {
 
 export function dashboardPage(state: DashboardState): string {
   const tableHtml = toolCallTable(state.rows, state.sort, state.order, state.filterStatus);
+  const summaryHtml = policySummaryCard(state.policySummary);
 
   return shell(
     'Dashboard',
     `${headerBar(state.upn, state.csrfToken)}
      <h1>Dashboard</h1>
-     ${state.policySummaryHtml}
+     ${summaryHtml}
      <h2>Recent tool calls <span style="font-weight:normal;color:#6e6e73;font-size:0.9rem">(last ${state.rows.length} shown, in-memory — cleared on restart)</span></h2>
      ${tableHtml}
      <footer>In-memory log; cleared on restart. Showing up to 200 most recent calls.</footer>`

@@ -72,11 +72,11 @@ No brainstorm/research doc exists for this feature — direction came from a 1:1
 
 ### Phase 3 — Policy summary card
 
-- [ ] Add `Policy.summary()` + `PolicyManager.summary()` returning structured data (see Affected Files table). Test in `test/policy.test.ts`.
-- [ ] Add `policySummaryCard(summary)` template: defaults section listing allowed tools, then per-user rows showing UPN + their allow/deny diffs relative to defaults.
-- [ ] Wire `opts.policyManager.summary()` through dashboard handler into `dashboardPage`.
-- [ ] Replace the placeholder div in `dashboardPage` with the rendered card. "Edit YAML" button stays on this card.
-- [ ] Test: card renders default allow list, per-user diffs displayed correctly, no users → only defaults shown.
+- [x] Add `Policy.summary()` + `PolicyManager.summary()` returning structured data (see Affected Files table). Test in `test/policy.test.ts`.
+- [x] Add `policySummaryCard(summary)` template: defaults section listing allowed tools, then per-user rows showing UPN + their allow/deny diffs relative to defaults.
+- [x] Wire `opts.policyManager.summary()` through dashboard handler into `dashboardPage`.
+- [x] Replace the placeholder div in `dashboardPage` with the rendered card. "Edit YAML" button stays on this card.
+- [x] Test: card renders default allow list, per-user diffs displayed correctly, no users → only defaults shown.
 
 **Files touched**: `src/policy/index.ts`, `src/admin/templates.ts`, `src/admin/router.ts`, `test/policy.test.ts`, `test/admin-dashboard.test.ts`.
 **Rough size**: ~120 LOC prod + ~80 LOC tests. Half day.

@@ -51,3 +51,11 @@ Estimated scope: L
 ---
 
 ## [2026-05-28 00:02] — Phase 2: Dashboard landing page + log table
+
+- **Action**: Added `dashboardPage`, `toolCallTable`, `headerBar` to `src/admin/templates.ts`. Added `GET /admin/dashboard` route in `src/admin/router.ts` with sort+filter. Updated redirects in router (`GET /` and `/callback`). Added header bar to policy editor. Wrote 12 integration tests.
+- **Files changed**: `src/admin/templates.ts`, `src/admin/router.ts`, `test/admin-dashboard.test.ts` (new)
+- **Result**: success — 222/222 tests, verify clean, committed + pushed to develop
+
+---
+
+## [2026-05-28 00:03] — Phase 3: Policy summary card

@@ -275,4 +275,28 @@ describe('GET /admin/dashboard', () => {
     expect(res.text).toContain('/admin/logout');
     expect(res.text).toContain('admin@example.com');
   });
+
+  it('renders the policy summary card with default allow tools', async () => {
+    harness = buildHarness();
+    const res = await request(harness.app)
+      .get('/admin/dashboard')
+      .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`);
+
+    expect(res.status).toBe(200);
+    // The harness initialises with defaults.allow = [get-me]
+    expect(res.text).toContain('Policy summary');
+    expect(res.text).toContain('Default allow');
+    expect(res.text).toContain('get-me');
+    expect(res.text).toContain('Edit YAML');
+  });
+
+  it('shows "No per-user overrides" when no user entries exist', async () => {
+    harness = buildHarness();
+    const res = await request(harness.app)
+      .get('/admin/dashboard')
+      .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('No per-user overrides');
+  });
 });
