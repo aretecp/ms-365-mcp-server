@@ -54,7 +54,7 @@ export function loginPage(): string {
     'Sign in',
     `<h1>Areté M365 MCP — admin</h1>
      <p>Sign in with your Areté Microsoft 365 account to manage the policy.</p>
-     <p><a href="/admin/login"><button>Sign in with Microsoft</button></a></p>`
+     <form method="post" action="/admin/login"><button>Sign in with Microsoft</button></form>`
   );
 }
 
