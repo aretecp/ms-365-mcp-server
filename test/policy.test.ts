@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Policy } from '../src/policy/index.js';
+import type { PolicySummary } from '../src/policy/index.js';
 
 describe('Policy.check', () => {
   it('allows tools in defaults.allow', () => {
@@ -83,5 +84,62 @@ describe('Policy.check', () => {
     expect(policy.check({ userPrincipalName: 'anyone@example.com', toolName: 'get-me' })).toBe(
       false
     );
+  });
+});
+
+describe('Policy.summary', () => {
+  it('returns defaultAllow sorted alphabetically', () => {
+    const policy = Policy.fromDocument({
+      defaults: { allow: ['z-tool', 'a-tool', 'm-tool'] },
+    });
+    const summary: PolicySummary = policy.summary();
+    expect(summary.defaultAllow).toEqual(['a-tool', 'm-tool', 'z-tool']);
+  });
+
+  it('returns an empty defaultAllow when no defaults are set', () => {
+    const policy = Policy.fromDocument({});
+    expect(policy.summary().defaultAllow).toEqual([]);
+  });
+
+  it('returns per-user entries sorted by UPN', () => {
+    const policy = Policy.fromDocument({
+      defaults: { allow: ['get-me'] },
+      users: {
+        'z@example.com': { allow: ['tool-z'] },
+        'a@example.com': { allow: ['tool-a'] },
+      },
+    });
+    const summary = policy.summary();
+    expect(summary.users[0].upn).toBe('a@example.com');
+    expect(summary.users[1].upn).toBe('z@example.com');
+  });
+
+  it('returns allow and deny arrays sorted alphabetically per user', () => {
+    const policy = Policy.fromDocument({
+      defaults: { allow: ['get-me'] },
+      users: {
+        'u@example.com': {
+          allow: ['z-allowed', 'a-allowed'],
+          deny: ['y-denied', 'b-denied'],
+        },
+      },
+    });
+    const user = policy.summary().users[0];
+    expect(user.allow).toEqual(['a-allowed', 'z-allowed']);
+    expect(user.deny).toEqual(['b-denied', 'y-denied']);
+  });
+
+  it('returns empty users array when no per-user entries exist', () => {
+    const policy = Policy.fromDocument({ defaults: { allow: ['get-me'] } });
+    expect(policy.summary().users).toEqual([]);
+  });
+
+  it('per-user UPN is normalized to lowercase (matches check() behaviour)', () => {
+    const policy = Policy.fromDocument({
+      defaults: { allow: [] },
+      users: { 'UPPER@EXAMPLE.COM': { allow: ['get-me'] } },
+    });
+    const user = policy.summary().users[0];
+    expect(user.upn).toBe('upper@example.com');
   });
 });

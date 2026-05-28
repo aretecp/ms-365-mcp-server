@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import crypto from 'node:crypto';
 import logger from './logger.js';
 import GraphClient from './graph-client.js';
 import { getRequestContext } from './request-context.js';
@@ -14,6 +15,7 @@ import {
   type UtilityToolContext,
   type CallToolResult,
 } from './tools/index.js';
+import { toolCallLog, redactArgs, redactResponse } from './admin/tool-call-log.js';
 
 /** Hard cap on Graph `$top` for list requests, configurable via env. */
 function maxTopFromEnv(): number | undefined {
@@ -93,17 +95,27 @@ async function executeTool(
   params: Record<string, unknown>,
   policy?: PolicyChecker
 ): Promise<CallToolResult> {
+  const startedAt = Date.now();
   const ctx = getRequestContext();
+  const upn = ctx?.userPrincipalName ?? null;
   logger.info(`Tool ${tool.name} called with params: ${JSON.stringify(params)}`);
 
-  if (
-    policy &&
-    !policy.check({ userPrincipalName: ctx?.userPrincipalName ?? null, toolName: tool.name })
-  ) {
+  if (policy && !policy.check({ userPrincipalName: upn, toolName: tool.name })) {
     logger.warn(
-      `Policy denied tool ${tool.name} for ${ctx?.userPrincipalName ?? 'anonymous'} (oid=${ctx?.userOid ?? 'n/a'})`
+      `Policy denied tool ${tool.name} for ${upn ?? 'anonymous'} (oid=${ctx?.userOid ?? 'n/a'})`
     );
-    return policyDeniedResult(tool, ctx?.userPrincipalName ?? null);
+    toolCallLog.record({
+      id: crypto.randomUUID(),
+      ts: startedAt,
+      upn,
+      toolName: tool.name,
+      status: 'denied_by_policy',
+      latencyMs: Date.now() - startedAt,
+      argsExcerpt: redactArgs(params),
+      responseExcerpt: null,
+      errorText: `Policy denied tool '${tool.name}' for user '${upn ?? 'unknown'}'.`,
+    });
+    return policyDeniedResult(tool, upn);
   }
 
   // Server-side guards run AFTER policy and BEFORE any outbound Graph call.
@@ -114,9 +126,18 @@ async function executeTool(
       await tool.precondition(graphClient, params);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.warn(
-        `Precondition refused tool ${tool.name} for ${ctx?.userPrincipalName ?? 'anonymous'}: ${message}`
-      );
+      logger.warn(`Precondition refused tool ${tool.name} for ${upn ?? 'anonymous'}: ${message}`);
+      toolCallLog.record({
+        id: crypto.randomUUID(),
+        ts: startedAt,
+        upn,
+        toolName: tool.name,
+        status: 'precondition_failed',
+        latencyMs: Date.now() - startedAt,
+        argsExcerpt: redactArgs(params),
+        responseExcerpt: null,
+        errorText: message,
+      });
       return preconditionFailedResult(tool, message);
     }
   }
@@ -297,19 +318,58 @@ async function executeTool(
       }
     }
 
-    return {
+    const result: CallToolResult = {
       content: response.content.map((item) => ({ type: 'text' as const, text: item.text })),
       _meta: response._meta,
       isError: response.isError,
     };
+    const responseText = response.content[0]?.text ?? null;
+    if (result.isError) {
+      toolCallLog.record({
+        id: crypto.randomUUID(),
+        ts: startedAt,
+        upn,
+        toolName: tool.name,
+        status: 'graph_error',
+        latencyMs: Date.now() - startedAt,
+        argsExcerpt: redactArgs(params),
+        responseExcerpt: null,
+        errorText: redactResponse(responseText),
+      });
+    } else {
+      toolCallLog.record({
+        id: crypto.randomUUID(),
+        ts: startedAt,
+        upn,
+        toolName: tool.name,
+        status: 'allowed',
+        latencyMs: Date.now() - startedAt,
+        argsExcerpt: redactArgs(params),
+        responseExcerpt: redactResponse(responseText),
+        errorText: null,
+      });
+    }
+    return result;
   } catch (error) {
-    logger.error(`Error in tool ${tool.name}: ${(error as Error).message}`);
+    const message = (error as Error).message;
+    logger.error(`Error in tool ${tool.name}: ${message}`);
+    toolCallLog.record({
+      id: crypto.randomUUID(),
+      ts: startedAt,
+      upn,
+      toolName: tool.name,
+      status: 'graph_error',
+      latencyMs: Date.now() - startedAt,
+      argsExcerpt: redactArgs(params),
+      responseExcerpt: null,
+      errorText: redactResponse(message),
+    });
     return {
       content: [
         {
           type: 'text',
           text: JSON.stringify({
-            error: `Error in tool ${tool.name}: ${(error as Error).message}`,
+            error: `Error in tool ${tool.name}: ${message}`,
           }),
         },
       ],
@@ -380,20 +440,34 @@ function registerUtilityToolWithMcp(
       openWorldHint: utility.openWorldHint ?? true,
     },
     async (params) => {
+      const utilStartedAt = Date.now();
+      const reqCtx = getRequestContext();
+      const utilUpn = reqCtx?.userPrincipalName ?? null;
+
       if (policy) {
-        const reqCtx = getRequestContext();
         if (
           !policy.check({
-            userPrincipalName: reqCtx?.userPrincipalName ?? null,
+            userPrincipalName: utilUpn,
             toolName: utility.name,
           })
         ) {
+          toolCallLog.record({
+            id: crypto.randomUUID(),
+            ts: utilStartedAt,
+            upn: utilUpn,
+            toolName: utility.name,
+            status: 'denied_by_policy',
+            latencyMs: Date.now() - utilStartedAt,
+            argsExcerpt: redactArgs(params),
+            responseExcerpt: null,
+            errorText: `Policy denied tool '${utility.name}' for user '${utilUpn ?? 'unknown'}'.`,
+          });
           return {
             content: [
               {
                 type: 'text',
                 text: JSON.stringify({
-                  error: `Policy denied tool '${utility.name}' for user '${reqCtx?.userPrincipalName ?? 'unknown'}'.`,
+                  error: `Policy denied tool '${utility.name}' for user '${utilUpn ?? 'unknown'}'.`,
                 }),
               },
             ],
@@ -401,7 +475,39 @@ function registerUtilityToolWithMcp(
           };
         }
       }
-      return utility.execute(params, ctx);
+
+      try {
+        const utilResult = await utility.execute(params, ctx);
+        const utilText =
+          (utilResult as { content?: Array<{ text?: string }> }).content?.[0]?.text ?? null;
+        const isErr = (utilResult as { isError?: boolean }).isError === true;
+        toolCallLog.record({
+          id: crypto.randomUUID(),
+          ts: utilStartedAt,
+          upn: utilUpn,
+          toolName: utility.name,
+          status: isErr ? 'graph_error' : 'allowed',
+          latencyMs: Date.now() - utilStartedAt,
+          argsExcerpt: redactArgs(params),
+          responseExcerpt: isErr ? null : redactResponse(utilText),
+          errorText: isErr ? redactResponse(utilText) : null,
+        });
+        return utilResult;
+      } catch (utilErr) {
+        const utilMsg = (utilErr as Error).message;
+        toolCallLog.record({
+          id: crypto.randomUUID(),
+          ts: utilStartedAt,
+          upn: utilUpn,
+          toolName: utility.name,
+          status: 'graph_error',
+          latencyMs: Date.now() - utilStartedAt,
+          argsExcerpt: redactArgs(params),
+          responseExcerpt: null,
+          errorText: redactResponse(utilMsg),
+        });
+        throw utilErr;
+      }
     }
   );
 }

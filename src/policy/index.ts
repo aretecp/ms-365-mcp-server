@@ -17,6 +17,23 @@ import logger from '../logger.js';
  * users fall through to defaults.allow.
  */
 
+/**
+ * Structured summary of the active policy for display in the admin dashboard.
+ * Returned by {@link Policy.summary} / {@link PolicyManager.summary}.
+ */
+export interface PolicySummary {
+  /** Tools allowed for any user not covered by a per-user entry. */
+  defaultAllow: string[];
+  /** Per-user overrides, sorted by UPN. */
+  users: Array<{
+    upn: string;
+    /** Tools explicitly allowed for this user (beyond defaults). */
+    allow: string[];
+    /** Tools explicitly denied for this user (overrides defaults). */
+    deny: string[];
+  }>;
+}
+
 export interface PolicyDocument {
   defaults?: {
     allow?: string[];
@@ -124,6 +141,22 @@ export class Policy implements PolicyChecker {
   source(): string {
     return this.doc.sourcePath;
   }
+
+  /**
+   * Returns a structured summary of the policy for the admin dashboard.
+   * Arrays are sorted for stable rendering; the underlying Sets are unordered.
+   */
+  summary(): PolicySummary {
+    const defaultAllow = [...this.doc.defaultAllow].sort();
+    const users = [...this.doc.perUser.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([upn, entry]) => ({
+        upn,
+        allow: [...entry.allow].sort(),
+        deny: [...entry.deny].sort(),
+      }));
+    return { defaultAllow, users };
+  }
 }
 
 /**
@@ -164,6 +197,11 @@ export class PolicyManager implements PolicyChecker {
   /** Visible for tests / diagnostics. */
   source(): string {
     return this.filePath;
+  }
+
+  /** Delegates to the currently-loaded Policy. */
+  summary(): PolicySummary {
+    return this.current.summary();
   }
 
   /**
