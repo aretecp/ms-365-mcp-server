@@ -9,7 +9,12 @@
  */
 
 /** Returned by every admin handler. */
-export const ADMIN_CSP = "default-src 'none'; form-action 'self'; style-src 'unsafe-inline'";
+// form-action allows the POST /admin/login → 302 to login.microsoftonline.com
+// to actually navigate. With just 'self' the browser silently blocks the
+// redirect after the form submission. (Government clouds would need their
+// own host added here; Areté is on the standard worldwide cloud.)
+export const ADMIN_CSP =
+  "default-src 'none'; form-action 'self' https://login.microsoftonline.com; style-src 'unsafe-inline'";
 
 /** Escape the five characters that matter inside an HTML element or attribute. */
 export function escapeHtml(value: string): string {

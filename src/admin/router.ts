@@ -164,9 +164,14 @@ export function buildAdminRouter(opts: AdminRouterOptions): Router {
         id_token: (tokens as unknown as { id_token?: string }).id_token,
         scope: tokens.scope,
       });
+      // sameSite: 'lax' (not strict) because the cookie is set during the OAuth
+      // callback (microsoftonline → /admin/callback). With strict, Chrome won't
+      // send the cookie on the immediately-following redirect to /admin/policy,
+      // and the user gets a 401 right after a successful sign-in. POST writes
+      // are CSRF-token-guarded so this doesn't loosen defenses meaningfully.
       res.cookie(ADMIN_COOKIE_NAME, session.sessionId, {
         httpOnly: true,
-        sameSite: 'strict',
+        sameSite: 'lax',
         secure: req.secure,
         path: '/admin',
         maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
