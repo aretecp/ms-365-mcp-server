@@ -1,3 +1,10 @@
+## [2.2.4](https://github.com/aretecp/ms-365-mcp-server/compare/v2.2.3...v2.2.4) (2026-05-28)
+
+### Bug Fixes
+
+* **admin:** allow login.microsoftonline.com in CSP form-action ([7eb6d8e](https://github.com/aretecp/ms-365-mcp-server/commit/7eb6d8eacf8dda0d796eda0b6bc217738a17e220))
+* **admin:** use sameSite lax on admin session cookie ([e997831](https://github.com/aretecp/ms-365-mcp-server/commit/e997831d6ab700572af93eb368c8d8df9c2d4e2b))
+
 ## [2.2.3](https://github.com/aretecp/ms-365-mcp-server/compare/v2.2.2...v2.2.3) (2026-05-28)
 
 ### Bug Fixes
