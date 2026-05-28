@@ -1,3 +1,9 @@
+## [2.2.1](https://github.com/aretecp/ms-365-mcp-server/compare/v2.2.0...v2.2.1) (2026-05-28)
+
+### Bug Fixes
+
+* **ci:** load shared Infisical secrets before app secrets in deploy workflows ([69517e2](https://github.com/aretecp/ms-365-mcp-server/commit/69517e23e3e774bff04bc15c5dca41eaa862f43c))
+
 ## [2.2.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.1.0...v2.2.0) (2026-05-27)
 
 ### New Features
