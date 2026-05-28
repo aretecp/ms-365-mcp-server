@@ -1,3 +1,9 @@
+## [2.2.3](https://github.com/aretecp/ms-365-mcp-server/compare/v2.2.2...v2.2.3) (2026-05-28)
+
+### Bug Fixes
+
+* **admin:** make sign-in button POST to /admin/login so OAuth actually starts ([4c4197c](https://github.com/aretecp/ms-365-mcp-server/commit/4c4197c0ee321c52cd835157b70be21664138803))
+
 ## [2.2.2](https://github.com/aretecp/ms-365-mcp-server/compare/v2.2.1...v2.2.2) (2026-05-28)
 
 ### Bug Fixes
