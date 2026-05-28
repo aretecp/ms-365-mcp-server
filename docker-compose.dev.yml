@@ -52,8 +52,8 @@ services:
       NODE_ENV: "production"
 
     volumes:
-      - ./data-dev:/data
-      - ./policy-dev:/policy
+      - m365_mcp_data_dev:/data
+      - m365_mcp_policy_dev:/policy
 
     healthcheck:
       test:
@@ -65,6 +65,10 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+volumes:
+  m365_mcp_data_dev:
+  m365_mcp_policy_dev:
 
 networks:
   aichat_openwebui-network:

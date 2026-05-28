@@ -38,4 +38,6 @@ ENV MS365_MCP_POLICY_PATH=/policy/policy.yaml
 USER node
 EXPOSE 3000
 
-CMD ["node", "dist/index.js", "--http", "0.0.0.0:3000"]
+# Seed /policy/policy.yaml from the shipped example on first start. Uses
+# exec so SIGHUP (policy reload) propagates to the node process as PID 1.
+CMD ["sh", "-c", "[ -f /policy/policy.yaml ] || cp /app/policy.yaml.example /policy/policy.yaml; exec node dist/index.js --http 0.0.0.0:3000"]

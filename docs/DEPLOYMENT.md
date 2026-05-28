@@ -565,47 +565,19 @@ GitHub Actions workspace prerequisites (set once per environment via the GH UI o
 | `vars.INFISICAL_INTERNAL_PROJECT_SLUG` | repo-level GH variable                                       | both deploy workflows |
 | `vars.VPS_USER`                        | environment-level GH variable (`production` / `development`) | both deploy workflows |
 
-### 7.5 First-time bootstrap (manual)
+### 7.5 First-time bootstrap (manual clone only)
 
-Prod refuses to clone — the first deploy is hand-driven by an operator. After that, CI takes over.
+Prod refuses to clone — the first deploy needs an operator to SSH in once and clone the repo. After that, CI takes over end-to-end. State (`/data` sessions DB, `/policy` YAML) lives in named docker volumes, so there's no host directory perms to set up.
 
 ```bash
 # Prerequisite: §3.5 terraform apply ran successfully and
 # `dig +short m365.mcp.areteintelligence.ai` returns the VPS IP.
 
 ssh <vps-tailscale-ip>
-
-# Clone the repo at $HOME (matches deploy-prod.yml's expectation).
 git clone https://github.com/aretecp/ms-365-mcp-server.git ~/ms-365-mcp-server
-cd ~/ms-365-mcp-server
-git checkout v0.1.0   # or whatever the first release tag is
-
-mkdir -p data policy
-chown -R 1000:1000 data policy
-
-# Bootstrap the policy file once.
-install -m 0644 policy.yaml.example policy/policy.yaml
-
-# First-deploy secrets: pull from Infisical manually since CI hasn't run yet.
-infisical login
-infisical run --env prod --path /m365-mcp -- bash -c \
-  'cat > .env <<EOF
-MICROSOFT_CLIENT_ID=$MICROSOFT_CLIENT_ID
-MICROSOFT_CLIENT_SECRET=$MICROSOFT_CLIENT_SECRET
-MICROSOFT_TENANT_ID=$MICROSOFT_TENANT_ID
-MS365_MCP_SESSION_KEY=$MS365_MCP_SESSION_KEY
-MS365_MCP_POLICY_ADMINS=$MS365_MCP_POLICY_ADMINS
-PUBLIC_HOSTNAME=m365.mcp.areteintelligence.ai
-ENVIRONMENT=production
-VERSION=v0.1.0
-EOF'
-chmod 600 .env
-
-docker compose --env-file .env -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml logs -f m365-mcp
 ```
 
-Traefik picks the service up immediately and provisions the cert on the first HTTPS request. From this point forward, `deploy-prod.yml` reuses the same checkout, overwrites `.env`, and rolls forward — no more manual SSH.
+That's it — `deploy-prod.yml` handles `.env`, `git checkout <tag>`, `docker compose up`, and the healthcheck on every subsequent run. Traefik picks the service up immediately and provisions the cert on the first HTTPS request.
 
 For dev, the bootstrap is automatic — `deploy-dev.yml` clones the repo on first run if `~/ms-365-mcp-server` doesn't exist.
 
