@@ -33,7 +33,7 @@ describe('buildMcpServerInstructions', () => {
     expect(s).toContain('Teams chat and channel');
   });
 
-  it("includes Teams guidance when all toolsets are enabled", () => {
+  it('includes Teams guidance when all toolsets are enabled', () => {
     const s = buildMcpServerInstructions({ multiAccount: false, toolsets: 'all' });
     expect(s).toContain('Teams chat and channel');
   });

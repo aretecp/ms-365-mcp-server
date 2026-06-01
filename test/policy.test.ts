@@ -8,7 +8,9 @@ describe('Policy.check', () => {
       defaults: { allow: ['mail-message-list', 'identity-get-me'] },
     });
     expect(policy.check({ userPrincipalName: null, toolName: 'mail-message-list' })).toBe(true);
-    expect(policy.check({ userPrincipalName: 'u@example.com', toolName: 'identity-get-me' })).toBe(true);
+    expect(policy.check({ userPrincipalName: 'u@example.com', toolName: 'identity-get-me' })).toBe(
+      true
+    );
   });
 
   it('denies tools missing from defaults.allow when there is no user entry (fail-closed)', () => {
@@ -53,8 +55,12 @@ describe('Policy.check', () => {
       defaults: { allow: [] },
       users: { 'CASE@EXAMPLE.COM': { allow: ['identity-get-me'] } },
     });
-    expect(policy.check({ userPrincipalName: 'case@example.com', toolName: 'identity-get-me' })).toBe(true);
-    expect(policy.check({ userPrincipalName: 'Case@Example.Com', toolName: 'identity-get-me' })).toBe(true);
+    expect(
+      policy.check({ userPrincipalName: 'case@example.com', toolName: 'identity-get-me' })
+    ).toBe(true);
+    expect(
+      policy.check({ userPrincipalName: 'Case@Example.Com', toolName: 'identity-get-me' })
+    ).toBe(true);
   });
 
   it('falls through to defaults when the user is unknown', () => {
@@ -62,9 +68,9 @@ describe('Policy.check', () => {
       defaults: { allow: ['identity-get-me'] },
       users: { 'known@example.com': { allow: ['extra-tool'] } },
     });
-    expect(policy.check({ userPrincipalName: 'unknown@example.com', toolName: 'identity-get-me' })).toBe(
-      true
-    );
+    expect(
+      policy.check({ userPrincipalName: 'unknown@example.com', toolName: 'identity-get-me' })
+    ).toBe(true);
     expect(policy.check({ userPrincipalName: 'unknown@example.com', toolName: 'extra-tool' })).toBe(
       false
     );
@@ -81,9 +87,9 @@ describe('Policy.check', () => {
 
   it('an empty document denies everything', () => {
     const policy = Policy.fromDocument({});
-    expect(policy.check({ userPrincipalName: 'anyone@example.com', toolName: 'identity-get-me' })).toBe(
-      false
-    );
+    expect(
+      policy.check({ userPrincipalName: 'anyone@example.com', toolName: 'identity-get-me' })
+    ).toBe(false);
   });
 });
 

@@ -43,7 +43,10 @@ describe('PolicyManager', () => {
     const mgr = PolicyManager.fromFile(filePath);
     expect(mgr.check({ userPrincipalName: null, toolName: 'mail-message-list' })).toBe(false);
 
-    fs.writeFileSync(filePath, 'defaults:\n  allow:\n    - identity-get-me\n    - mail-message-list\n');
+    fs.writeFileSync(
+      filePath,
+      'defaults:\n  allow:\n    - identity-get-me\n    - mail-message-list\n'
+    );
     await mgr.reload();
 
     expect(mgr.check({ userPrincipalName: null, toolName: 'mail-message-list' })).toBe(true);

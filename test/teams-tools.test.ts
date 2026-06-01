@@ -115,7 +115,9 @@ describe('Teams-tool runtime — representative reads', () => {
 
   it('teams-online-meeting-find by join-web-url builds the $filter server-side', async () => {
     const joinUrl = 'https://teams.microsoft.com/l/meetup-join/abc';
-    await executeTool(findTool('teams-online-meeting-find'), mockGraphClient, { 'join-web-url': joinUrl });
+    await executeTool(findTool('teams-online-meeting-find'), mockGraphClient, {
+      'join-web-url': joinUrl,
+    });
     const path = graphRequest.mock.calls[0][0] as string;
     expect(path).toContain('/me/onlineMeetings?$filter=');
     expect(path).toContain('joinWebUrl');
@@ -124,7 +126,9 @@ describe('Teams-tool runtime — representative reads', () => {
   });
 
   it('teams-online-meeting-find by meeting-id GETs the meeting path', async () => {
-    await executeTool(findTool('teams-online-meeting-find'), mockGraphClient, { 'meeting-id': 'MMM' });
+    await executeTool(findTool('teams-online-meeting-find'), mockGraphClient, {
+      'meeting-id': 'MMM',
+    });
     expect(graphRequest.mock.calls[0][0] as string).toMatch(/^\/me\/onlineMeetings\/MMM/);
   });
 
@@ -234,7 +238,11 @@ describe('Teams-tool policy gating', () => {
     return { graphRequest } as unknown as GraphClient;
   }
 
-  const defaultsAllowingReads = ['teams-chat-list', 'teams-joined-list', 'teams-online-meeting-find'];
+  const defaultsAllowingReads = [
+    'teams-chat-list',
+    'teams-joined-list',
+    'teams-online-meeting-find',
+  ];
 
   it('reads in defaults.allow let a user with no per-user entry through', async () => {
     const policy = Policy.fromDocument({ defaults: { allow: defaultsAllowingReads } });

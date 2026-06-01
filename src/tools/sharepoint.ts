@@ -8,7 +8,7 @@ const SITE_ID_HINT =
 const DRIVE_LISTING_TIP =
   "To fetch a file's bytes, use download-bytes with target " +
   '`/drives/{drive-id}/items/{item-id}/content`. The OneDrive tools (drive-children-list, ' +
-  'drive-item-get) cover the signed-in user\'s OneDrive; these sharepoint-drive-* tools cover ' +
+  "drive-item-get) cover the signed-in user's OneDrive; these sharepoint-drive-* tools cover " +
   'SharePoint document libraries and any other drive you have access to.';
 
 export const sharepointTools: readonly Tool[] = [
@@ -97,7 +97,11 @@ export const sharepointTools: readonly Tool[] = [
         : `/drives/${drive}/root/children`;
     },
     params: [
-      { name: 'drive-id', location: 'query', schema: z.string().min(1).describe('Drive id (from sharepoint-drive-list)') },
+      {
+        name: 'drive-id',
+        location: 'query',
+        schema: z.string().min(1).describe('Drive id (from sharepoint-drive-list)'),
+      },
       {
         name: 'driveItem-id',
         location: 'query',
@@ -130,7 +134,11 @@ export const sharepointTools: readonly Tool[] = [
         : `/drives/${drive}/root`;
     },
     params: [
-      { name: 'drive-id', location: 'query', schema: z.string().min(1).describe('Drive id (from sharepoint-drive-list)') },
+      {
+        name: 'drive-id',
+        location: 'query',
+        schema: z.string().min(1).describe('Drive id (from sharepoint-drive-list)'),
+      },
       {
         name: 'driveItem-id',
         location: 'query',
