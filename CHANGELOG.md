@@ -1,3 +1,9 @@
+## [2.5.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.4.1...v2.5.0) (2026-06-01)
+
+### New Features
+
+* **oauth:** broker OAuth with Dynamic Client Registration (point-and-connect) ([#23](https://github.com/aretecp/ms-365-mcp-server/issues/23)) ([bc63d0b](https://github.com/aretecp/ms-365-mcp-server/commit/bc63d0b272b6c0513aaf7b295d5c197de5454a74))
+
 ## [2.4.1](https://github.com/aretecp/ms-365-mcp-server/compare/v2.4.0...v2.4.1) (2026-06-01)
 
 ### Bug Fixes
