@@ -28,14 +28,14 @@ export const ALL_TOOLSETS: readonly Toolset[] = [
  * are not listed here.
  */
 export const CORE_TOOL_NAMES: ReadonlySet<string> = new Set([
-  'get-me',
-  'list-users',
-  'get-user',
-  'list-mail-folders',
+  'identity-get-me',
+  'user-search',
+  'user-get',
+  'mail-folder-list',
   'mail-message-list',
-  'get-mail-message',
+  'mail-message-get',
   'calendar-view',
-  'get-calendar-event',
+  'calendar-event-get',
   'drive-children-list',
   'drive-item-get',
 ]);

@@ -79,7 +79,7 @@ export const utilityTools: readonly UtilityTool[] = [
         .describe(
           'Relative Microsoft Graph path starting with "/". Common paths: ' +
             '/me/drive/items/{driveItem-id}/content (OneDrive file content); ' +
-            '/me/messages/{message-id}/attachments/{attachment-id}/$value (mail attachment, list-mail-attachments returns the IDs); ' +
+            '/me/messages/{message-id}/attachments/{attachment-id}/$value (mail attachment, mail-attachment-list returns the IDs); ' +
             '/me/photo/$value or /users/{user-id}/photo/$value (profile photo); ' +
             '/chats/{chat-id}/messages/{chatMessage-id}/hostedContents/{chatMessageHostedContent-id}/$value (Teams chat hosted content); ' +
             '/teams/{team-id}/channels/{channel-id}/messages/{chatMessage-id}/hostedContents/{chatMessageHostedContent-id}/$value (Teams channel hosted content).'

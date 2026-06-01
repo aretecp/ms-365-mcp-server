@@ -12,7 +12,7 @@ const USER_SEARCH_TIP =
 
 export const usersTools: readonly Tool[] = [
   {
-    name: 'list-users',
+    name: 'user-search',
     description:
       'List or search users in the tenant. Use this to resolve a display name to a userPrincipalName / Entra object id before referencing the user in mail recipients, calendar attendees, Teams mentions, or online-meeting participants. Do not invent these values — always look them up.',
     method: 'GET',
@@ -35,7 +35,7 @@ export const usersTools: readonly Tool[] = [
     llmTip: `${USER_SELECT_TIP}\n\n${USER_SEARCH_TIP}`,
   },
   {
-    name: 'get-user',
+    name: 'user-get',
     description:
       'Get a single user by id or userPrincipalName. The id can be the Entra object id (GUID) or the UPN (e.g. user@example.com).',
     method: 'GET',

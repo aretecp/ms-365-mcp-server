@@ -31,7 +31,7 @@ const FRAGMENTS: readonly Fragment[] = [
     text: 'Mail and message $search uses KQL; the $search query parameter value must be double-quoted per Graph (see search-query-parameter in Microsoft Graph docs).',
   },
   {
-    text: 'When you need an organizational user or recipient address, resolve it with list-users (or another directory tool); do not invent SMTP addresses.',
+    text: 'When you need an organizational user or recipient address, resolve it with user-search (or another directory tool); do not invent SMTP addresses.',
   },
   {
     text: 'Directory $search on collections such as /users or /groups requires ConsistencyLevel: eventual when the tool exposes that header.',

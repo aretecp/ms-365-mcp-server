@@ -13,15 +13,15 @@ vi.mock('../src/logger.js', () => ({
 const findTool = (name: string) => ALL_TOOLS.find((t) => t.name === name) as Tool;
 
 const NEW_TOOLS = [
-  'list-users',
-  'get-user',
-  'list-sites',
-  'get-site',
-  'list-site-drives',
+  'user-search',
+  'user-get',
+  'sharepoint-site-list',
+  'sharepoint-site-get',
+  'sharepoint-drive-list',
   'sharepoint-drive-children-list',
   'sharepoint-drive-item-get',
-  'list-site-lists',
-  'list-site-list-items',
+  'sharepoint-list-list',
+  'sharepoint-list-item-list',
 ];
 
 describe('PR 7 registration', () => {
@@ -69,14 +69,14 @@ describe('Tool.requestHeaders applied by the runtime', () => {
     mockGraphClient = { graphRequest } as unknown as GraphClient;
   });
 
-  it('list-users sets ConsistencyLevel: eventual unconditionally', async () => {
-    await executeTool(findTool('list-users'), mockGraphClient, {});
+  it('user-search sets ConsistencyLevel: eventual unconditionally', async () => {
+    await executeTool(findTool('user-search'), mockGraphClient, {});
     const opts = graphRequest.mock.calls[0][1] as { headers: Record<string, string> };
     expect(opts.headers['ConsistencyLevel']).toBe('eventual');
   });
 
   it('still sets ConsistencyLevel when other params are also passed', async () => {
-    await executeTool(findTool('list-users'), mockGraphClient, {
+    await executeTool(findTool('user-search'), mockGraphClient, {
       search: '"displayName:Spencer"',
       select: 'id,displayName,userPrincipalName',
     });
@@ -90,7 +90,7 @@ describe('Tool.requestHeaders applied by the runtime', () => {
   });
 
   it('does not leak ConsistencyLevel to tools without requestHeaders', async () => {
-    await executeTool(findTool('list-sites'), mockGraphClient, { search: 'Finance' });
+    await executeTool(findTool('sharepoint-site-list'), mockGraphClient, { search: 'Finance' });
     const opts = graphRequest.mock.calls[0][1] as { headers: Record<string, string> };
     expect(opts.headers['ConsistencyLevel']).toBeUndefined();
   });
@@ -108,17 +108,17 @@ describe('PR 7 runtime — paths and queries', () => {
     mockGraphClient = { graphRequest } as unknown as GraphClient;
   });
 
-  it('get-user with a UPN substitutes encoded path segment', async () => {
-    await executeTool(findTool('get-user'), mockGraphClient, { 'user-id': 'spencer@example.com' });
+  it('user-get with a UPN substitutes encoded path segment', async () => {
+    await executeTool(findTool('user-get'), mockGraphClient, { 'user-id': 'spencer@example.com' });
     const path = graphRequest.mock.calls[0][0] as string;
     expect(path).toContain('/users/spencer%40example.com');
   });
 
-  it('list-sites passes the plain search query through (not OData $search)', async () => {
-    await executeTool(findTool('list-sites'), mockGraphClient, { search: 'Finance Team' });
+  it('sharepoint-site-list passes the plain search query through (not OData $search)', async () => {
+    await executeTool(findTool('sharepoint-site-list'), mockGraphClient, { search: 'Finance Team' });
     const path = graphRequest.mock.calls[0][0] as string;
     // `search` is not in ODATA_PARAM_NAMES? Actually it IS — let me check the runtime mapping.
-    // The runtime prepends `$` for OData params; on list-sites we use the same `search` key
+    // The runtime prepends `$` for OData params; on sharepoint-site-list we use the same `search` key
     // because the runtime maps every `search` to `$search`. Graph accepts both `search=` and
     // `$search=` on /sites, but Microsoft's docs call the plain `search`; ensure at least one
     // recognizable form is present.
@@ -153,8 +153,8 @@ describe('PR 7 runtime — paths and queries', () => {
     expect(opts.method).toBe('GET');
   });
 
-  it('list-site-list-items threads site-id + list-id and accepts $expand=fields(...)', async () => {
-    await executeTool(findTool('list-site-list-items'), mockGraphClient, {
+  it('sharepoint-list-item-list threads site-id + list-id and accepts $expand=fields(...)', async () => {
+    await executeTool(findTool('sharepoint-list-item-list'), mockGraphClient, {
       'site-id': 'site-1',
       'list-id': 'list-1',
       expand: 'fields($select=Title,Status)',
@@ -208,7 +208,7 @@ describe('PR 7 policy gating', () => {
   });
 
   it('PR 7 tools are denied when missing from defaults and user has no allow entry', async () => {
-    const policy = Policy.fromDocument({ defaults: { allow: ['get-me'] } });
+    const policy = Policy.fromDocument({ defaults: { allow: ['identity-get-me'] } });
     const mockGraphClient = makeMockGraphClient();
     const result = await requestContext.run(
       {
@@ -218,7 +218,7 @@ describe('PR 7 policy gating', () => {
         userPrincipalName: 'anyone@example.com',
       },
       () =>
-        executeTool(findTool('list-users'), mockGraphClient, { search: '"displayName:S"' }, policy)
+        executeTool(findTool('user-search'), mockGraphClient, { search: '"displayName:S"' }, policy)
     );
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('Policy denied');

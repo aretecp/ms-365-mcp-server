@@ -13,26 +13,26 @@ vi.mock('../src/logger.js', () => ({
 const findTool = (name: string) => ALL_TOOLS.find((t) => t.name === name) as Tool;
 
 const READ_NAMES = [
-  'list-chats',
-  'get-chat',
-  'list-chat-messages',
-  'get-chat-message',
-  'list-joined-teams',
-  'list-team-channels',
-  'list-channel-messages',
-  'get-channel-message',
-  'list-channel-message-replies',
-  'online-meeting-find',
-  'list-meeting-transcripts',
+  'teams-chat-list',
+  'teams-chat-get',
+  'teams-chat-message-list',
+  'teams-chat-message-get',
+  'teams-joined-list',
+  'teams-channel-list',
+  'teams-channel-message-list',
+  'teams-channel-message-get',
+  'teams-channel-message-reply-list',
+  'teams-online-meeting-find',
+  'teams-meeting-transcript-list',
 ];
 
 const WRITE_NAMES = [
-  'send-chat-message',
-  'send-channel-message',
-  'send-channel-message-reply',
-  'create-online-meeting',
-  'update-online-meeting',
-  'delete-online-meeting',
+  'teams-chat-message-send',
+  'teams-channel-message-send',
+  'teams-channel-message-reply-send',
+  'teams-online-meeting-create',
+  'teams-online-meeting-update',
+  'teams-online-meeting-delete',
 ];
 
 describe('Teams-tool registration', () => {
@@ -97,15 +97,15 @@ describe('Teams-tool runtime — representative reads', () => {
     mockGraphClient = { graphRequest } as unknown as GraphClient;
   });
 
-  it('list-chats GETs /me/chats', async () => {
-    await executeTool(findTool('list-chats'), mockGraphClient, {});
+  it('teams-chat-list GETs /me/chats', async () => {
+    await executeTool(findTool('teams-chat-list'), mockGraphClient, {});
     const [path, opts] = graphRequest.mock.calls[0] as [string, { method: string }];
     expect(path.startsWith('/me/chats')).toBe(true);
     expect(opts.method).toBe('GET');
   });
 
-  it('list-chat-messages substitutes the chat-id into the path', async () => {
-    await executeTool(findTool('list-chat-messages'), mockGraphClient, {
+  it('teams-chat-message-list substitutes the chat-id into the path', async () => {
+    await executeTool(findTool('teams-chat-message-list'), mockGraphClient, {
       'chat-id': '19:abc@thread.v2',
     });
     const path = graphRequest.mock.calls[0][0] as string;
@@ -113,9 +113,9 @@ describe('Teams-tool runtime — representative reads', () => {
     expect(path).toContain('/chats/19%3Aabc%40thread.v2/messages');
   });
 
-  it('online-meeting-find by join-web-url builds the $filter server-side', async () => {
+  it('teams-online-meeting-find by join-web-url builds the $filter server-side', async () => {
     const joinUrl = 'https://teams.microsoft.com/l/meetup-join/abc';
-    await executeTool(findTool('online-meeting-find'), mockGraphClient, { 'join-web-url': joinUrl });
+    await executeTool(findTool('teams-online-meeting-find'), mockGraphClient, { 'join-web-url': joinUrl });
     const path = graphRequest.mock.calls[0][0] as string;
     expect(path).toContain('/me/onlineMeetings?$filter=');
     expect(path).toContain('joinWebUrl');
@@ -123,23 +123,23 @@ describe('Teams-tool runtime — representative reads', () => {
     expect(path).toContain('%20eq%20');
   });
 
-  it('online-meeting-find by meeting-id GETs the meeting path', async () => {
-    await executeTool(findTool('online-meeting-find'), mockGraphClient, { 'meeting-id': 'MMM' });
+  it('teams-online-meeting-find by meeting-id GETs the meeting path', async () => {
+    await executeTool(findTool('teams-online-meeting-find'), mockGraphClient, { 'meeting-id': 'MMM' });
     expect(graphRequest.mock.calls[0][0] as string).toMatch(/^\/me\/onlineMeetings\/MMM/);
   });
 
-  it('online-meeting-find refuses neither / both lookup keys (precondition)', async () => {
-    const neither = await executeTool(findTool('online-meeting-find'), mockGraphClient, {});
+  it('teams-online-meeting-find refuses neither / both lookup keys (precondition)', async () => {
+    const neither = await executeTool(findTool('teams-online-meeting-find'), mockGraphClient, {});
     expect(neither.isError).toBe(true);
-    const both = await executeTool(findTool('online-meeting-find'), mockGraphClient, {
+    const both = await executeTool(findTool('teams-online-meeting-find'), mockGraphClient, {
       'meeting-id': 'a',
       'join-web-url': 'b',
     });
     expect(both.isError).toBe(true);
   });
 
-  it('list-channel-message-replies threads team / channel / message ids into the path', async () => {
-    await executeTool(findTool('list-channel-message-replies'), mockGraphClient, {
+  it('teams-channel-message-reply-list threads team / channel / message ids into the path', async () => {
+    await executeTool(findTool('teams-channel-message-reply-list'), mockGraphClient, {
       'team-id': 'team-1',
       'channel-id': 'chan-1',
       'chatMessage-id': 'msg-1',
@@ -161,8 +161,8 @@ describe('Teams-tool runtime — writes', () => {
     mockGraphClient = { graphRequest } as unknown as GraphClient;
   });
 
-  it('send-chat-message POSTs a chatMessage JSON body to the chat', async () => {
-    await executeTool(findTool('send-chat-message'), mockGraphClient, {
+  it('teams-chat-message-send POSTs a chatMessage JSON body to the chat', async () => {
+    await executeTool(findTool('teams-chat-message-send'), mockGraphClient, {
       'chat-id': 'chat-1',
       body: {
         body: { contentType: 'html', content: '<p>hi</p>' },
@@ -176,8 +176,8 @@ describe('Teams-tool runtime — writes', () => {
     expect(parsed.body.content).toBe('<p>hi</p>');
   });
 
-  it('send-channel-message-reply POSTs to the /replies sub-resource', async () => {
-    await executeTool(findTool('send-channel-message-reply'), mockGraphClient, {
+  it('teams-channel-message-reply-send POSTs to the /replies sub-resource', async () => {
+    await executeTool(findTool('teams-channel-message-reply-send'), mockGraphClient, {
       'team-id': 't',
       'channel-id': 'c',
       'chatMessage-id': 'm',
@@ -189,8 +189,8 @@ describe('Teams-tool runtime — writes', () => {
     expect(JSON.parse(opts.body).body.content).toBe('<p>reply</p>');
   });
 
-  it('create-online-meeting POSTs the meeting body to /me/onlineMeetings', async () => {
-    await executeTool(findTool('create-online-meeting'), mockGraphClient, {
+  it('teams-online-meeting-create POSTs the meeting body to /me/onlineMeetings', async () => {
+    await executeTool(findTool('teams-online-meeting-create'), mockGraphClient, {
       body: {
         subject: 'Sync',
         startDateTime: '2026-05-23T14:00:00Z',
@@ -205,8 +205,8 @@ describe('Teams-tool runtime — writes', () => {
     expect(parsed.startDateTime).toBe('2026-05-23T14:00:00Z');
   });
 
-  it('update-online-meeting PATCHes the meeting id', async () => {
-    await executeTool(findTool('update-online-meeting'), mockGraphClient, {
+  it('teams-online-meeting-update PATCHes the meeting id', async () => {
+    await executeTool(findTool('teams-online-meeting-update'), mockGraphClient, {
       'meeting-id': 'meet-1',
       body: { subject: 'Renamed' },
     });
@@ -216,8 +216,8 @@ describe('Teams-tool runtime — writes', () => {
     expect(JSON.parse(opts.body).subject).toBe('Renamed');
   });
 
-  it('delete-online-meeting DELETEs the meeting', async () => {
-    await executeTool(findTool('delete-online-meeting'), mockGraphClient, {
+  it('teams-online-meeting-delete DELETEs the meeting', async () => {
+    await executeTool(findTool('teams-online-meeting-delete'), mockGraphClient, {
       'meeting-id': 'meet-1',
     });
     const [path, opts] = graphRequest.mock.calls[0] as [string, { method: string }];
@@ -234,7 +234,7 @@ describe('Teams-tool policy gating', () => {
     return { graphRequest } as unknown as GraphClient;
   }
 
-  const defaultsAllowingReads = ['list-chats', 'list-joined-teams', 'online-meeting-find'];
+  const defaultsAllowingReads = ['teams-chat-list', 'teams-joined-list', 'teams-online-meeting-find'];
 
   it('reads in defaults.allow let a user with no per-user entry through', async () => {
     const policy = Policy.fromDocument({ defaults: { allow: defaultsAllowingReads } });
@@ -247,7 +247,7 @@ describe('Teams-tool policy gating', () => {
         tenantId: 't',
         userPrincipalName: 'random@example.com',
       },
-      () => executeTool(findTool('list-chats'), mockGraphClient, {}, policy)
+      () => executeTool(findTool('teams-chat-list'), mockGraphClient, {}, policy)
     );
 
     expect(
@@ -299,7 +299,7 @@ describe('Teams-tool policy gating', () => {
     const policy = Policy.fromDocument({
       defaults: { allow: defaultsAllowingReads },
       users: {
-        'operator@example.com': { allow: ['send-chat-message'] },
+        'operator@example.com': { allow: ['teams-chat-message-send'] },
       },
     });
     const mockGraphClient = makeMockGraphClient();
@@ -313,7 +313,7 @@ describe('Teams-tool policy gating', () => {
       },
       () =>
         executeTool(
-          findTool('send-chat-message'),
+          findTool('teams-chat-message-send'),
           mockGraphClient,
           {
             'chat-id': 'c',

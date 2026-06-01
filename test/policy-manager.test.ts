@@ -28,14 +28,14 @@ describe('PolicyManager', () => {
   let filePath: string;
 
   beforeEach(() => {
-    filePath = tmpYaml('defaults:\n  allow:\n    - get-me\n');
+    filePath = tmpYaml('defaults:\n  allow:\n    - identity-get-me\n');
   });
 
   afterEach(() => cleanup(filePath));
 
   it('check() delegates to the loaded Policy', () => {
     const mgr = PolicyManager.fromFile(filePath);
-    expect(mgr.check({ userPrincipalName: 'a@b.com', toolName: 'get-me' })).toBe(true);
+    expect(mgr.check({ userPrincipalName: 'a@b.com', toolName: 'identity-get-me' })).toBe(true);
     expect(mgr.check({ userPrincipalName: 'a@b.com', toolName: 'send-mail' })).toBe(false);
   });
 
@@ -43,7 +43,7 @@ describe('PolicyManager', () => {
     const mgr = PolicyManager.fromFile(filePath);
     expect(mgr.check({ userPrincipalName: null, toolName: 'list-mail-messages' })).toBe(false);
 
-    fs.writeFileSync(filePath, 'defaults:\n  allow:\n    - get-me\n    - list-mail-messages\n');
+    fs.writeFileSync(filePath, 'defaults:\n  allow:\n    - identity-get-me\n    - list-mail-messages\n');
     await mgr.reload();
 
     expect(mgr.check({ userPrincipalName: null, toolName: 'list-mail-messages' })).toBe(true);
@@ -51,14 +51,14 @@ describe('PolicyManager', () => {
 
   it('reload() keeps the previous policy on a parse error and rejects', async () => {
     const mgr = PolicyManager.fromFile(filePath);
-    expect(mgr.check({ userPrincipalName: null, toolName: 'get-me' })).toBe(true);
+    expect(mgr.check({ userPrincipalName: null, toolName: 'identity-get-me' })).toBe(true);
 
     // Unclosed flow mapping — js-yaml throws on this.
-    fs.writeFileSync(filePath, 'defaults: { allow: [get-me\n');
+    fs.writeFileSync(filePath, 'defaults: { allow: [identity-get-me\n');
 
     await expect(mgr.reload()).rejects.toBeDefined();
     // Policy unchanged.
-    expect(mgr.check({ userPrincipalName: null, toolName: 'get-me' })).toBe(true);
+    expect(mgr.check({ userPrincipalName: null, toolName: 'identity-get-me' })).toBe(true);
   });
 
   it('overlapping reload calls coalesce into one extra reload', async () => {
@@ -94,7 +94,7 @@ describe('PolicyManager', () => {
     try {
       const mgr = PolicyManager.fromFile();
       expect(mgr.source()).toBe(filePath);
-      expect(mgr.check({ userPrincipalName: null, toolName: 'get-me' })).toBe(true);
+      expect(mgr.check({ userPrincipalName: null, toolName: 'identity-get-me' })).toBe(true);
     } finally {
       if (original === undefined) delete process.env.MS365_MCP_POLICY_PATH;
       else process.env.MS365_MCP_POLICY_PATH = original;
@@ -107,12 +107,12 @@ describe('PolicyManager', () => {
     const explicitPath = tmpYaml('defaults:\n  allow: []\n');
     try {
       const mgr = PolicyManager.fromFile(explicitPath);
-      fs.writeFileSync(explicitPath, 'defaults:\n  allow:\n    - get-me\n');
+      fs.writeFileSync(explicitPath, 'defaults:\n  allow:\n    - identity-get-me\n');
       // crypto import is here only to keep the file consistent with other tests
       // (avoid the unused-import lint trigger on the boilerplate).
       crypto.randomBytes(1);
       await mgr.reload();
-      expect(mgr.check({ userPrincipalName: null, toolName: 'get-me' })).toBe(true);
+      expect(mgr.check({ userPrincipalName: null, toolName: 'identity-get-me' })).toBe(true);
     } finally {
       cleanup(explicitPath);
     }

@@ -38,9 +38,9 @@ describe('default projection ($select)', () => {
     expect(path).toContain('$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview');
   });
 
-  it('injects the Minimal* user field set for list-users', async () => {
+  it('injects the Minimal* user field set for user-search', async () => {
     const { gc, calls } = makeGraphClient();
-    await executeTool(findTool('list-users'), gc, {});
+    await executeTool(findTool('user-search'), gc, {});
     expect(calls()[0]).toContain('$select=id,displayName,userPrincipalName,mail');
   });
 
@@ -58,9 +58,9 @@ describe('default projection ($select)', () => {
     expect(path).not.toContain('bodyPreview');
   });
 
-  it('does not project a by-id read (get-mail-message has no projection)', async () => {
+  it('does not project a by-id read (mail-message-get has no projection)', async () => {
     const { gc, calls } = makeGraphClient();
-    await executeTool(findTool('get-mail-message'), gc, { 'message-id': 'abc' });
+    await executeTool(findTool('mail-message-get'), gc, { 'message-id': 'abc' });
     expect(calls()[0]).not.toContain('$select=');
   });
 });
@@ -89,7 +89,7 @@ describe('default page size ($top)', () => {
 
   it('does not inject $top for a by-id read (no top param)', async () => {
     const { gc, calls } = makeGraphClient();
-    await executeTool(findTool('get-mail-message'), gc, { 'message-id': 'abc' });
+    await executeTool(findTool('mail-message-get'), gc, { 'message-id': 'abc' });
     expect(calls()[0]).not.toContain('$top=');
   });
 

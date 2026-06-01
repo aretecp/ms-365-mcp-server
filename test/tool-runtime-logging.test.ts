@@ -35,7 +35,7 @@ beforeEach(() => {
 describe('executeTool logging — status: allowed', () => {
   it('records status=allowed for a successful tool call', async () => {
     const gc = makeGraphClient('{"id":"test-me"}');
-    const tool = findTool('get-me');
+    const tool = findTool('identity-get-me');
 
     await requestContext.run(
       { accessToken: 'at', userOid: 'oid', tenantId: 't', userPrincipalName: 'alice@example.com' },
@@ -44,7 +44,7 @@ describe('executeTool logging — status: allowed', () => {
 
     const snap = toolCallLog.snapshot();
     expect(snap).toHaveLength(1);
-    expect(snap[0].toolName).toBe('get-me');
+    expect(snap[0].toolName).toBe('identity-get-me');
     expect(snap[0].status).toBe('allowed');
     expect(snap[0].upn).toBe('alice@example.com');
     expect(snap[0].errorText).toBeNull();
@@ -56,7 +56,7 @@ describe('executeTool logging — status: allowed', () => {
 
   it('records upn=null when no request context is present', async () => {
     const gc = makeGraphClient();
-    const tool = findTool('get-me');
+    const tool = findTool('identity-get-me');
 
     // Call outside requestContext.run — simulates utility/pre-auth path.
     await executeTool(tool, gc, {});
@@ -71,7 +71,7 @@ describe('executeTool logging — status: allowed', () => {
 describe('executeTool logging — status: denied_by_policy', () => {
   it('records status=denied_by_policy when the policy check fails', async () => {
     const gc = makeGraphClient();
-    const tool = findTool('get-me');
+    const tool = findTool('identity-get-me');
 
     const denyAll = Policy.fromDocument({ defaults: { allow: [] } });
 
@@ -89,7 +89,7 @@ describe('executeTool logging — status: denied_by_policy', () => {
     expect(snap).toHaveLength(1);
     expect(snap[0].status).toBe('denied_by_policy');
     expect(snap[0].upn).toBe('blocked@example.com');
-    expect(snap[0].toolName).toBe('get-me');
+    expect(snap[0].toolName).toBe('identity-get-me');
     expect(snap[0].errorText).toMatch(/Policy denied/);
     expect(snap[0].responseExcerpt).toBeNull();
     // Graph client must NOT have been called.
@@ -101,12 +101,12 @@ describe('executeTool logging — status: denied_by_policy', () => {
 
 describe('executeTool logging — status: precondition_failed', () => {
   it('records status=precondition_failed when precondition throws', async () => {
-    // update-mail-message has an isDraft precondition.
+    // mail-message-update has an isDraft precondition.
     const gc = {
       graphRequest: vi.fn().mockResolvedValue({ isDraft: false }),
     } as unknown as GraphClient;
 
-    const tool = findTool('update-mail-message');
+    const tool = findTool('mail-message-update');
 
     await requestContext.run(
       {
@@ -137,7 +137,7 @@ describe('executeTool logging — status: graph_error (outer catch)', () => {
       graphRequest: vi.fn().mockRejectedValue(new Error('Network timeout')),
     } as unknown as GraphClient;
 
-    const tool = findTool('get-me');
+    const tool = findTool('identity-get-me');
 
     const result = await requestContext.run(
       {
@@ -167,7 +167,7 @@ describe('executeTool logging — status: graph_error (outer catch)', () => {
       }),
     } as unknown as GraphClient;
 
-    const tool = findTool('get-me');
+    const tool = findTool('identity-get-me');
 
     const result = await requestContext.run(
       {
@@ -192,13 +192,13 @@ describe('executeTool logging — status: graph_error (outer catch)', () => {
 describe('executeTool logging — argsExcerpt redaction', () => {
   it('does not log raw token values in argsExcerpt', async () => {
     const gc = makeGraphClient();
-    const tool = findTool('get-me');
+    const tool = findTool('identity-get-me');
 
     await requestContext.run(
       { accessToken: 'at', userOid: 'oid', tenantId: 't', userPrincipalName: 'u@example.com' },
       () =>
         executeTool(tool, gc, {
-          // get-me has no params so these won't be in the Graph call,
+          // identity-get-me has no params so these won't be in the Graph call,
           // but the tool receives them as raw params
           access_token: 'supersecret',
         })
@@ -217,9 +217,9 @@ describe('executeTool logging — multiple calls accumulate', () => {
     await requestContext.run(
       { accessToken: 'at', userOid: 'oid', tenantId: 't', userPrincipalName: 'u@example.com' },
       async () => {
-        await executeTool(findTool('get-me'), gc, {});
-        await executeTool(findTool('get-me'), gc, {});
-        await executeTool(findTool('get-me'), gc, {});
+        await executeTool(findTool('identity-get-me'), gc, {});
+        await executeTool(findTool('identity-get-me'), gc, {});
+        await executeTool(findTool('identity-get-me'), gc, {});
       }
     );
 

@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { OData, type Tool } from './types.js';
 
 const SITE_ID_HINT =
-  'Site id is either the GUID returned by list-sites or the path form ' +
-  '"<hostname>,<siteCollectionId>,<webId>" Graph documents. Use list-sites to discover it.';
+  'Site id is either the GUID returned by sharepoint-site-list or the path form ' +
+  '"<hostname>,<siteCollectionId>,<webId>" Graph documents. Use sharepoint-site-list to discover it.';
 
 const DRIVE_LISTING_TIP =
   "To fetch a file's bytes, use download-bytes with target " +
@@ -15,7 +15,7 @@ export const sharepointTools: readonly Tool[] = [
   // ---------- Sites ----------
 
   {
-    name: 'list-sites',
+    name: 'sharepoint-site-list',
     description:
       'Search SharePoint sites in the tenant. Always pass a search query — Graph returns nearly nothing without one.',
     method: 'GET',
@@ -42,7 +42,7 @@ export const sharepointTools: readonly Tool[] = [
       'Use $select=id,name,displayName,webUrl to keep responses small.',
   },
   {
-    name: 'get-site',
+    name: 'sharepoint-site-get',
     description: 'Get a single SharePoint site by id.',
     method: 'GET',
     path: '/sites/{site-id}',
@@ -61,7 +61,7 @@ export const sharepointTools: readonly Tool[] = [
   // ---------- Drives in a site ----------
 
   {
-    name: 'list-site-drives',
+    name: 'sharepoint-drive-list',
     description:
       'List the document libraries (drives) inside a SharePoint site. A site can have multiple drives — most commonly "Documents" plus any custom libraries.',
     method: 'GET',
@@ -84,7 +84,7 @@ export const sharepointTools: readonly Tool[] = [
   {
     name: 'sharepoint-drive-children-list',
     description:
-      "List items (files and folders) in a SharePoint document library or any drive by drive-id (from list-site-drives). Omit driveItem-id for the drive root; pass a folder driveItem-id to list inside it. For the signed-in user's OneDrive, use drive-children-list instead.",
+      "List items (files and folders) in a SharePoint document library or any drive by drive-id (from sharepoint-drive-list). Omit driveItem-id for the drive root; pass a folder driveItem-id to list inside it. For the signed-in user's OneDrive, use drive-children-list instead.",
     method: 'GET',
     path: '/drives/{drive-id}/root/children',
     scopes: ['Sites.Read.All'],
@@ -97,7 +97,7 @@ export const sharepointTools: readonly Tool[] = [
         : `/drives/${drive}/root/children`;
     },
     params: [
-      { name: 'drive-id', location: 'query', schema: z.string().describe('Drive id (from list-site-drives)') },
+      { name: 'drive-id', location: 'query', schema: z.string().describe('Drive id (from sharepoint-drive-list)') },
       {
         name: 'driveItem-id',
         location: 'query',
@@ -130,7 +130,7 @@ export const sharepointTools: readonly Tool[] = [
         : `/drives/${drive}/root`;
     },
     params: [
-      { name: 'drive-id', location: 'query', schema: z.string().describe('Drive id (from list-site-drives)') },
+      { name: 'drive-id', location: 'query', schema: z.string().describe('Drive id (from sharepoint-drive-list)') },
       {
         name: 'driveItem-id',
         location: 'query',
@@ -147,7 +147,7 @@ export const sharepointTools: readonly Tool[] = [
   // ---------- Lists in a site ----------
 
   {
-    name: 'list-site-lists',
+    name: 'sharepoint-list-list',
     description:
       'List the SharePoint lists in a site. Lists are structured-data tables (distinct from document libraries, which are file storage).',
     method: 'GET',
@@ -166,7 +166,7 @@ export const sharepointTools: readonly Tool[] = [
     ],
   },
   {
-    name: 'list-site-list-items',
+    name: 'sharepoint-list-item-list',
     description:
       'List rows in a SharePoint list. Always returns items with their column values expanded ($expand=fields) — list items are nearly useless without their fields.',
     method: 'GET',
@@ -198,7 +198,7 @@ export const sharepointTools: readonly Tool[] = [
       },
     ],
     llmTip:
-      'list-site-list-items defaults to $expand=fields so each row carries its column values. ' +
+      'sharepoint-list-item-list defaults to $expand=fields so each row carries its column values. ' +
       'For wide lists, set $expand=fields($select=Title,Status,...) to scope which columns come back.',
   },
 ];

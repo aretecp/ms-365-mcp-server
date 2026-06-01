@@ -38,7 +38,7 @@ interface Harness {
 }
 
 function buildHarness(opts: { admin?: boolean } = { admin: true }): Harness {
-  const policyFile = tmpPolicyFile('defaults:\n  allow:\n    - get-me\n');
+  const policyFile = tmpPolicyFile('defaults:\n  allow:\n    - identity-get-me\n');
   const policyManager = PolicyManager.fromFile(policyFile);
 
   const adminSessionId = 'dash-session-' + crypto.randomBytes(4).toString('hex');
@@ -96,7 +96,7 @@ function makeEntry(overrides: Partial<ToolCallEntry> = {}): ToolCallEntry {
     id: crypto.randomUUID(),
     ts: Date.now(),
     upn: 'user@example.com',
-    toolName: 'get-me',
+    toolName: 'identity-get-me',
     status: 'allowed',
     latencyMs: 10,
     argsExcerpt: '{}',
@@ -286,10 +286,10 @@ describe('GET /admin/dashboard', () => {
       .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`);
 
     expect(res.status).toBe(200);
-    // The harness initialises with defaults.allow = [get-me]
+    // The harness initialises with defaults.allow = [identity-get-me]
     expect(res.text).toContain('Policy summary');
     expect(res.text).toContain('Default allow');
-    expect(res.text).toContain('get-me');
+    expect(res.text).toContain('identity-get-me');
     expect(res.text).toContain('Edit YAML');
   });
 

@@ -77,7 +77,7 @@ describe('response-size ceiling', () => {
   it('does not reshape a non-collection JSON response over the ceiling', async () => {
     const blob = JSON.stringify({ id: 'x', note: 'y'.repeat(1000) });
     const gc = makeGraphClient(blob);
-    const result = await executeTool(findTool('get-mail-message'), gc, { 'message-id': 'abc' });
+    const result = await executeTool(findTool('mail-message-get'), gc, { 'message-id': 'abc' });
 
     const body = JSON.parse(result.content[0].text);
     expect(body.truncated).toBeUndefined();
