@@ -105,14 +105,20 @@ module "m365_mcp" {
     { uri = "https://m365.mcp.areteintelligence.ai/admin/callback",     type = "web" },
     { uri = "https://m365.mcp.dev.areteintelligence.ai/admin/callback", type = "web" },
 
-    # Pass-through redirect targets for MCP clients. Microsoft requires
-    # an exact match against this list, so every client redirect_uri an
-    # operator wants to use must be listed here.
-    { uri = "https://claude.ai/api/mcp/auth_callback", type = "web" },
+    # MCP OAuth broker callback. The server brokers OAuth so Microsoft ONLY
+    # ever redirects here — never to an MCP client. These two entries (one per
+    # host) are the ONLY MCP redirect URIs Entra needs, regardless of how many
+    # clients connect; each client registers its own callback with the server
+    # via Dynamic Client Registration.
+    { uri = "https://m365.mcp.areteintelligence.ai/auth/callback",     type = "web" },
+    { uri = "https://m365.mcp.dev.areteintelligence.ai/auth/callback", type = "web" },
 
-    # Local MCP clients (Claude Code, Claude Desktop, MCP Inspector).
-    # Loopback http is permitted by Entra under the Web platform.
-    # Confirm the port observed at first sign-in and add more rows as needed.
+    # NOTE: the legacy per-client pass-through entries below are no longer
+    # required by the broker — Microsoft never redirects to a client callback.
+    # They are retained only as belt-and-suspenders during the broker rollout
+    # and can be removed once all clients are confirmed working. Do NOT add new
+    # per-client rows here; new clients use Dynamic Client Registration.
+    { uri = "https://claude.ai/api/mcp/auth_callback", type = "web" },
     { uri = "http://localhost:13151/callback",   type = "web" },
     { uri = "http://127.0.0.1:13151/callback",   type = "web" },
   ]
@@ -420,7 +426,11 @@ kill_timeout   = 30      # SIGHUP shouldn't be confused; default term still appl
 
 [env]
   MS365_MCP_PUBLIC_URL          = "https://m365.mcp.areteintelligence.ai"
-  MS365_MCP_CORS_ORIGIN         = "https://claude.ai"
+  # CORS: leave unset for permissive (reflect-Origin) so any MCP client can
+  # connect. Pin to a single origin ONLY for a hardened single-client deploy.
+  # MS365_MCP_CORS_ORIGIN       = "https://claude.ai"
+  # Legacy redirect allowlist: fallback only for non-DCR clients (Claude.ai).
+  # DCR clients are validated against their own registered redirect_uris.
   MS365_MCP_ALLOWED_REDIRECT_URIS = "https://claude.ai/api/mcp/auth_callback"
   MS365_MCP_OUTPUT_FORMAT       = "toon"
   NODE_ENV                      = "production"
@@ -674,24 +684,25 @@ Once all six pass, send the URL to power user #2.
 
 ## 10. Connecting MCP clients
 
+The server is a self-contained OAuth broker with Dynamic Client Registration, so **most clients need nothing but the URL** — paste `https://m365.mcp.areteintelligence.ai/mcp` and complete the Microsoft sign-in. The client discovers `/register`, obtains its own `client_id`, and runs Authorization Code + PKCE. No per-client Entra entries, no allowlist edits.
+
+The only one-time infra requirement is the broker callback `https://m365.mcp.areteintelligence.ai/auth/callback` registered on the Entra app (§3, terraform).
+
 ### 10.1 Claude.ai (web)
 
-Settings → Integrations → "Add integration" → paste `https://m365.mcp.areteintelligence.ai/mcp`. Claude.ai handles the OAuth dance and stores the bearer token in your account. The allowed redirect URI is `https://claude.ai/api/mcp/auth_callback`, which is already in the `MS365_MCP_ALLOWED_REDIRECT_URIS` env var above.
+Settings → Integrations → "Add integration" → paste `https://m365.mcp.areteintelligence.ai/mcp`. Claude.ai may not perform DCR yet; it uses the fixed redirect `https://claude.ai/api/mcp/auth_callback`, which is covered by the legacy `MS365_MCP_ALLOWED_REDIRECT_URIS` fallback.
 
-### 10.2 Claude Code (CLI)
+### 10.2 MCP Inspector / MCP Jam, Cursor, and other DCR clients
+
+Paste the `/mcp` URL and authorize — nothing else. These clients register dynamically via `/register`, so their loopback callback (e.g. `http://127.0.0.1:6274/oauth/callback`) needs no Entra or allowlist entry. (This is the case that failed before the broker with "no usable CIMD or DCR flow".)
+
+### 10.3 Claude Code (CLI)
 
 ```bash
 claude mcp add --transport http areté-m365 https://m365.mcp.areteintelligence.ai/mcp
 ```
 
-Claude Code uses a loopback redirect URI (`http://127.0.0.1:<port>/...`). The server's default validation allows loopback http when no `MS365_MCP_ALLOWED_REDIRECT_URIS` is set — but we set it explicitly above to lock down web clients. **To support Claude Code as well, expand the allowlist:**
-
-```bash
-fly secrets set --app arete-m365-mcp \
-  MS365_MCP_ALLOWED_REDIRECT_URIS="https://claude.ai/api/mcp/auth_callback,http://127.0.0.1:13151/callback,http://localhost:13151/callback"
-```
-
-The loopback port Claude Code picks is stable per install — observe the actual port from the redirect URL in the consent screen the first time, then add it. If users routinely switch machines, consider dropping the allowlist entirely (the default rules already block non-loopback http, and reject `javascript:` / `data:` / `file:`); the tradeoff is that any https origin becomes acceptable as a redirect target. For Areté's threat model (closed user set, Entra tenant scoped), that's a defensible posture.
+Claude Code uses a loopback redirect URI (`http://127.0.0.1:<port>/...`). If it performs DCR it works with no further config; if not, add its loopback callback to the legacy allowlist (`MS365_MCP_ALLOWED_REDIRECT_URIS`).
 
 ### 10.3 Claude Desktop
 
@@ -721,7 +732,7 @@ Look for:
 - `policy.saved` — every admin-UI / SIGHUP reload.
 - `Policy reloaded from <path>` — on SIGHUP after a successful disk read.
 - Refresh-on-skew warnings — token close to expiry, refreshed silently. Normal at the 5-minute mark before expiration.
-- `Rejected /authorize request with disallowed redirect_uri` — means a client tried a URI not in the allowlist. Add it or push back on the client.
+- `Rejected /authorize with unregistered redirect_uri` — a DCR client sent a `redirect_uri` not among the ones it registered, or a non-DCR client sent one not in `MS365_MCP_ALLOWED_REDIRECT_URIS`. For DCR clients this is usually a client bug; for legacy clients, add the URI to the allowlist.
 
 ### 11.2 Upgrades
 
@@ -798,20 +809,22 @@ Minimal viable monitoring:
 
 ## 13. Troubleshooting
 
-| Symptom                                                                  | Likely cause                                                            | First check                                                                                                                    |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| "AADSTS65001: The user or administrator has not consented"               | Missing admin consent on a starred scope.                               | Entra → App registrations → API permissions → Grant admin consent.                                                             |
-| `redirect_uri is not allowed` in server logs                             | Client URI not in `MS365_MCP_ALLOWED_REDIRECT_URIS`.                    | Add it, redeploy.                                                                                                              |
-| Admin UI returns 401 immediately after sign-in                           | Cookie `Secure` flag set but request was http (broken TLS termination). | Confirm Traefik (or Fly) is forwarding `X-Forwarded-Proto: https`.                                                             |
-| Admin UI returns 403                                                     | UPN not in `MS365_MCP_POLICY_ADMINS`.                                   | Update the env var, redeploy (admin allowlist is start-time only).                                                             |
-| `/mcp` returns 401 with `WWW-Authenticate: Bearer`                       | Session expired or revoked.                                             | Client re-runs OAuth. Expected after `revoke` or after `MS365_MCP_SESSION_KEY` rotation.                                       |
-| Server refuses to start: "MS365_MCP_POLICY_ADMINS is required"           | Env var missing or empty.                                               | Set it; this is fail-fast by design.                                                                                           |
-| Server refuses to start: "MS365_MCP_SESSION_KEY must decode to 32 bytes" | Key is wrong length.                                                    | Regenerate with `openssl rand -base64 32`.                                                                                     |
-| `policy.saved` log line followed by 500s on `/mcp`                       | Bad YAML accepted but tool reference invalid.                           | The policy validator caught it before save — re-check the YAML; the previous policy stays live until the next successful save. |
-| Tool call returns 429 with no retry                                      | No throttling/backoff yet.                                              | Tracked in [issue #8](https://github.com/aretecp/issues/8); ride it out and back off client-side for now.                      |
-| `deploy-prod.yml` fails with "REPO_DIR does not exist"                   | Prod refuses to clone — the first deploy is manual (§7.5).              | Bootstrap the prod checkout once by hand, then re-run the workflow.                                                            |
-| Tailscale step fails with "node already exists"                          | Stale auth key reuse.                                                   | Rotate the auth key in `arete-shared` Infisical (`TAILSCALE_AUTHKEY`).                                                         |
-| Workflow can't read Infisical secrets                                    | OIDC identity not bound to this repo.                                   | Confirm `vars.INFISICAL_OIDC_IDENTITY_ID` matches the identity that has access to `/m365-mcp` in the internal project.         |
+| Symptom                                                                  | Likely cause                                                                                                     | First check                                                                                                                    |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| "AADSTS65001: The user or administrator has not consented"               | Missing admin consent on a starred scope.                                                                        | Entra → App registrations → API permissions → Grant admin consent.                                                             |
+| `redirect_uri is not registered for this client` at `/authorize`         | DCR client's URI not among its registered set, or non-DCR client's URI not in `MS365_MCP_ALLOWED_REDIRECT_URIS`. | DCR: client re-registers. Legacy: add to allowlist, redeploy.                                                                  |
+| `no usable CIMD or DCR flow` in the **client**                           | Client reached a build without the `/register` endpoint, or pointed at the wrong URL.                            | Confirm `/.well-known/oauth-authorization-server` advertises `registration_endpoint`; redeploy the broker build.               |
+| `AADSTS50011: redirect URI mismatch` on the consent screen               | The broker callback `…/auth/callback` isn't registered on the Entra app.                                         | Add it via terraform (§3) and apply.                                                                                           |
+| Admin UI returns 401 immediately after sign-in                           | Cookie `Secure` flag set but request was http (broken TLS termination).                                          | Confirm Traefik (or Fly) is forwarding `X-Forwarded-Proto: https`.                                                             |
+| Admin UI returns 403                                                     | UPN not in `MS365_MCP_POLICY_ADMINS`.                                                                            | Update the env var, redeploy (admin allowlist is start-time only).                                                             |
+| `/mcp` returns 401 with `WWW-Authenticate: Bearer`                       | Session expired or revoked.                                                                                      | Client re-runs OAuth. Expected after `revoke` or after `MS365_MCP_SESSION_KEY` rotation.                                       |
+| Server refuses to start: "MS365_MCP_POLICY_ADMINS is required"           | Env var missing or empty.                                                                                        | Set it; this is fail-fast by design.                                                                                           |
+| Server refuses to start: "MS365_MCP_SESSION_KEY must decode to 32 bytes" | Key is wrong length.                                                                                             | Regenerate with `openssl rand -base64 32`.                                                                                     |
+| `policy.saved` log line followed by 500s on `/mcp`                       | Bad YAML accepted but tool reference invalid.                                                                    | The policy validator caught it before save — re-check the YAML; the previous policy stays live until the next successful save. |
+| Tool call returns 429 with no retry                                      | No throttling/backoff yet.                                                                                       | Tracked in [issue #8](https://github.com/aretecp/issues/8); ride it out and back off client-side for now.                      |
+| `deploy-prod.yml` fails with "REPO_DIR does not exist"                   | Prod refuses to clone — the first deploy is manual (§7.5).                                                       | Bootstrap the prod checkout once by hand, then re-run the workflow.                                                            |
+| Tailscale step fails with "node already exists"                          | Stale auth key reuse.                                                                                            | Rotate the auth key in `arete-shared` Infisical (`TAILSCALE_AUTHKEY`).                                                         |
+| Workflow can't read Infisical secrets                                    | OIDC identity not bound to this repo.                                                                            | Confirm `vars.INFISICAL_OIDC_IDENTITY_ID` matches the identity that has access to `/m365-mcp` in the internal project.         |
 
 ---
 

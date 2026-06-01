@@ -58,6 +58,14 @@ function resolveDbPath(): string {
   return env && env !== '' ? env : DEFAULT_DB_PATH;
 }
 
+/**
+ * The SQLite file backing per-user sessions. Exported so sibling stores
+ * (e.g. the OAuth client registry) can share the same database file.
+ */
+export function resolveSessionDbPath(): string {
+  return resolveDbPath();
+}
+
 export class SessionStore {
   private readonly db: Database.Database;
   private readonly key: Buffer;
@@ -78,6 +86,10 @@ export class SessionStore {
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
+    // The OAuth client registry opens a second connection to this same file;
+    // a busy timeout lets writers wait out each other's lock rather than
+    // throwing SQLITE_BUSY.
+    this.db.pragma('busy_timeout = 5000');
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         session_id          TEXT PRIMARY KEY,
