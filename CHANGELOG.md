@@ -1,3 +1,24 @@
+## [2.4.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.3.0...v2.4.0) (2026-06-01)
+
+### New Features
+
+* **instructions:** per-toolset instruction scoping (U7) ([ac0321c](https://github.com/aretecp/ms-365-mcp-server/commit/ac0321cfa17ceea06ab719ea622ddc4d31ef95d8))
+* **runtime:** per-tool path-resolver seam (U2a) ([94399ba](https://github.com/aretecp/ms-365-mcp-server/commit/94399ba68f55d9284ac5a794b171b96d82ea8df9))
+* **runtime:** server-side response shaping (U1) ([e2e59fc](https://github.com/aretecp/ms-365-mcp-server/commit/e2e59fcbfbca3ff7f8cf01f09bb06c6b42f06d38))
+* **runtime:** static toolset tags + registration filter (U6) ([ad85a01](https://github.com/aretecp/ms-365-mcp-server/commit/ad85a01b2cb925c28bbbc4f23b16d3f299056de6))
+* **tools:** consolidate mail list tools into mail-message-list (U3) ([05d72fd](https://github.com/aretecp/ms-365-mcp-server/commit/05d72fd6226b603bd5871002a084d96f2a1ec22f))
+* **tools:** consolidate OneDrive + SharePoint drive reads (U4) ([8b13a67](https://github.com/aretecp/ms-365-mcp-server/commit/8b13a676bb8a28085eb449b8ad54ec89b202e723))
+* **tools:** online-meeting-find + conservative calendar-view (U5) ([f1f1f54](https://github.com/aretecp/ms-365-mcp-server/commit/f1f1f54ba48088c662cde91c8998a3ff70f6196c))
+
+### Bug Fixes
+
+* **review:** address ce-code-review findings ([2956714](https://github.com/aretecp/ms-365-mcp-server/commit/2956714e6b85999c7c94c61dc0ae61052f636c69))
+
+### Improvements
+
+* apply 2026 MCP best practices to the tool surface ([#18](https://github.com/aretecp/ms-365-mcp-server/issues/18)) ([f1487c1](https://github.com/aretecp/ms-365-mcp-server/commit/f1487c17baeaf86f73abd09272127ecc7565c4ad))
+* **tools:** adopt service-resource-action naming (U2b) ([b395659](https://github.com/aretecp/ms-365-mcp-server/commit/b395659b742f37db4a61a3f9aac8ed93408e6355))
+
 ## [2.3.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.2.4...v2.3.0) (2026-05-28)
 
 ### New Features
