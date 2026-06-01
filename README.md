@@ -58,7 +58,25 @@ Delegated permissions needed for the full v1.5 surface. **Bold scopes need admin
 
 After granting consent, users will see a single consent prompt on first sign-in covering everything they're authorized to use.
 
-Point an MCP client (Claude Desktop, MCP Inspector, etc.) at `http://localhost:3000/mcp`. The server handles OAuth discovery via `/.well-known/oauth-authorization-server` and `/authorize` + `/token` endpoints, then accepts `Authorization: Bearer <token>` on `/mcp`.
+**Redirect URI — register exactly one.** The server brokers OAuth: Microsoft only ever redirects back to the server's own callback, never to the MCP client. Add this single redirect URI to the Entra app (Authentication → Web), using your public host:
+
+```
+https://<your-host>/auth/callback     # prod, e.g. https://m365.mcp.areteintelligence.ai/auth/callback
+http://localhost:3000/auth/callback    # local dev
+```
+
+That one entry covers every MCP client. No per-client Entra changes are ever needed — clients obtain their own `client_id` through Dynamic Client Registration (see [Connecting a client](#connecting-a-client)).
+
+## Connecting a client
+
+Point any MCP client (Claude, MCP Inspector/Jam, Cursor, …) at `https://<your-host>/mcp` — that's it. The server is a self-contained OAuth authorization server, so the client auto-negotiates everything:
+
+1. **Discovery** — `/.well-known/oauth-protected-resource` + `/.well-known/oauth-authorization-server`.
+2. **Dynamic Client Registration** (RFC 7591) — the client POSTs its callback to `/register` and gets a `client_id`. No pre-registered credentials, no manual allowlisting.
+3. **Authorize + token** — standard Authorization Code + PKCE against `/authorize` and `/token`.
+4. The client then sends `Authorization: Bearer <session>` on `/mcp`.
+
+Clients that don't perform DCR (Claude.ai today) keep working via the legacy `MS365_MCP_ALLOWED_REDIRECT_URIS` fallback.
 
 ### Why no Mail.Send
 
@@ -95,9 +113,9 @@ The full surface audit ran in [issue #11](https://github.com/aretecp/ms-365-mcp-
 Documented in our internal infrastructure repo. The server expects:
 
 - `MS365_MCP_CLIENT_ID`, `MS365_MCP_TENANT_ID`, `MS365_MCP_CLIENT_SECRET` (latter required for confidential-client setups).
-- `MS365_MCP_PUBLIC_URL` (or `--public-url`) when running behind a reverse proxy. Browser-facing OAuth redirects use this; internal endpoints stay on the request origin.
-- `MS365_MCP_ALLOWED_REDIRECT_URIS` — explicit allowlist for OAuth `redirect_uri` values forwarded to Microsoft, to defend against CWE-601 open-redirect abuse.
-- `MS365_MCP_CORS_ORIGIN` — single origin string. Defaults to `http://localhost:3000`.
+- `MS365_MCP_PUBLIC_URL` (or `--public-url`) when running behind a reverse proxy. Browser-facing OAuth redirects (including the server's `/auth/callback`) use this; internal endpoints stay on the request origin.
+- `MS365_MCP_ALLOWED_REDIRECT_URIS` — legacy redirect allowlist for clients that do **not** perform Dynamic Client Registration (e.g. Claude.ai). DCR clients are validated against their own registered `redirect_uris`, so new clients need no entry here. Optional.
+- `MS365_MCP_CORS_ORIGIN` — optional. Leave unset for permissive CORS (reflects the caller's Origin) so any MCP client can connect; set to a single origin to pin it for a hardened deployment.
 
 ## CLI options
 
@@ -139,13 +157,18 @@ JSON by default. Pass `--toon` (or `MS365_MCP_OUTPUT_FORMAT=toon`) for [Token-Or
 
 ## Auth flow
 
-OAuth Authorization Code + PKCE. The server is the OAuth client to Entra and the OAuth authorization server to the MCP client (two-leg PKCE).
+OAuth Authorization Code + PKCE, **brokered**. The server is the OAuth client to Entra _and_ a self-contained OAuth authorization server to the MCP client. Microsoft only ever redirects to the server's own `/auth/callback`, so a single Entra redirect URI serves every client, and clients self-register via RFC 7591 DCR.
 
 ```
-MCP client ──/authorize──> us ──Microsoft authorize──> Entra ──code──> us ──code──> Entra ──token──> us ──our token──> MCP client
+MCP client ──/register──> us  (gets client_id)
+MCP client ──/authorize──> us ──MS authorize (our callback, server PKCE)──> Entra
+Entra ──code──> us (/auth/callback) ──MS token exchange──> Entra ──tokens──> us
+   us: create session, mint OUR auth code ──redirect to client callback──> MCP client
+MCP client ──/token (our code + client PKCE verifier)──> us ──opaque session id──> MCP client
+MCP client ──Bearer <session id>──> /mcp
 ```
 
-PR 3 replaces the current pass-through with SQLite-backed per-user session tokens (opaque session IDs issued to MCP clients; encrypted refresh + access tokens stored server-side). Until then, the MCP client holds Microsoft access tokens directly.
+Per-user sessions are SQLite-backed: the MCP client holds an opaque session id, while encrypted Microsoft refresh + access tokens stay server-side and are refreshed transparently on each call. PKCE is verified end-to-end — the brokered authorization code is useless without the client's verifier. Dynamically-registered clients live in the `oauth_clients` table (same DB file as sessions).
 
 ## Contributing
 

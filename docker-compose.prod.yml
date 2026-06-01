@@ -26,14 +26,14 @@ services:
 
     # No published ports — Traefik discovers the service over the shared network.
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.m365-mcp.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.areteintelligence.ai}`)"
-      - "traefik.http.routers.m365-mcp.entrypoints=websecure"
-      - "traefik.http.routers.m365-mcp.tls=true"
-      - "traefik.http.routers.m365-mcp.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.m365-mcp.middlewares=security-headers@file,rate-limit@file"
-      - "traefik.http.services.m365-mcp.loadbalancer.server.port=3000"
-      - "traefik.docker.network=aichat_openwebui-network"
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.m365-mcp.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.areteintelligence.ai}`)'
+      - 'traefik.http.routers.m365-mcp.entrypoints=websecure'
+      - 'traefik.http.routers.m365-mcp.tls=true'
+      - 'traefik.http.routers.m365-mcp.tls.certresolver=letsencrypt'
+      - 'traefik.http.routers.m365-mcp.middlewares=security-headers@file,rate-limit@file'
+      - 'traefik.http.services.m365-mcp.loadbalancer.server.port=3000'
+      - 'traefik.docker.network=aichat_openwebui-network'
 
     networks:
       - default
@@ -41,24 +41,35 @@ services:
 
     environment:
       # Wired from the .env file written by the deploy workflow.
-      MS365_MCP_CLIENT_ID:     "${MICROSOFT_CLIENT_ID:?MICROSOFT_CLIENT_ID is required}"
-      MS365_MCP_CLIENT_SECRET: "${MICROSOFT_CLIENT_SECRET:?MICROSOFT_CLIENT_SECRET is required}"
-      MS365_MCP_TENANT_ID:     "${MICROSOFT_TENANT_ID:?MICROSOFT_TENANT_ID is required}"
-      MS365_MCP_SESSION_KEY:   "${MS365_MCP_SESSION_KEY:?MS365_MCP_SESSION_KEY is required}"
-      MS365_MCP_POLICY_ADMINS: "${MS365_MCP_POLICY_ADMINS:?MS365_MCP_POLICY_ADMINS is required}"
+      MS365_MCP_CLIENT_ID: '${MICROSOFT_CLIENT_ID:?MICROSOFT_CLIENT_ID is required}'
+      MS365_MCP_CLIENT_SECRET: '${MICROSOFT_CLIENT_SECRET:?MICROSOFT_CLIENT_SECRET is required}'
+      MS365_MCP_TENANT_ID: '${MICROSOFT_TENANT_ID:?MICROSOFT_TENANT_ID is required}'
+      MS365_MCP_SESSION_KEY: '${MS365_MCP_SESSION_KEY:?MS365_MCP_SESSION_KEY is required}'
+      MS365_MCP_POLICY_ADMINS: '${MS365_MCP_POLICY_ADMINS:?MS365_MCP_POLICY_ADMINS is required}'
 
-      # Public URL + CORS + redirect allowlist — fixed for the prod deploy.
-      MS365_MCP_PUBLIC_URL:     "https://${PUBLIC_HOSTNAME:-m365.mcp.areteintelligence.ai}"
-      MS365_MCP_CORS_ORIGIN:    "https://claude.ai"
-      MS365_MCP_ALLOWED_REDIRECT_URIS: "https://claude.ai/api/mcp/auth_callback"
+      # Public URL — fixed for the prod deploy. The OAuth broker advertises this
+      # as the issuer and builds its single Microsoft callback from it:
+      #   https://m365.mcp.areteintelligence.ai/auth/callback
+      # That ONE redirect URI is all the Entra app needs registered, no matter
+      # how many MCP clients connect (they obtain their own client_id via DCR).
+      MS365_MCP_PUBLIC_URL: 'https://${PUBLIC_HOSTNAME:-m365.mcp.areteintelligence.ai}'
+      # CORS is permissive by default (bearer-auth, no cookies) so any MCP client
+      # can connect — leave MS365_MCP_CORS_ORIGIN unset. Set it to pin a single
+      # origin only for a hardened single-client deployment.
+      # MS365_MCP_CORS_ORIGIN: "https://claude.ai"
+      # Legacy redirect allowlist: now only a fallback for clients that DON'T do
+      # Dynamic Client Registration (Claude.ai today). DCR clients are validated
+      # against their own registered redirect_uris, so new clients need no entry
+      # here. Keep Claude.ai listed until it migrates to DCR.
+      MS365_MCP_ALLOWED_REDIRECT_URIS: 'https://claude.ai/api/mcp/auth_callback'
 
       # Release metadata (visible in /admin and logs).
       ENVIRONMENT: ${ENVIRONMENT:-production}
-      VERSION:     ${VERSION:-}
+      VERSION: ${VERSION:-}
 
       # Output + runtime tuning.
-      MS365_MCP_OUTPUT_FORMAT: "toon"
-      NODE_ENV: "production"
+      MS365_MCP_OUTPUT_FORMAT: 'toon'
+      NODE_ENV: 'production'
 
     volumes:
       - m365_mcp_data:/data
@@ -66,9 +77,9 @@ services:
 
     healthcheck:
       test:
-        - "CMD"
-        - "node"
-        - "-e"
+        - 'CMD'
+        - 'node'
+        - '-e'
         - "require('http').get('http://127.0.0.1:3000/.well-known/oauth-authorization-server', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1));"
       interval: 30s
       timeout: 5s
