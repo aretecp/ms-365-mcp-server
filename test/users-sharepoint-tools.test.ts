@@ -18,15 +18,14 @@ const NEW_TOOLS = [
   'list-sites',
   'get-site',
   'list-site-drives',
-  'list-drive-root-children',
-  'list-drive-folder-children',
-  'get-drive-item-by-id',
+  'sharepoint-drive-children-list',
+  'sharepoint-drive-item-get',
   'list-site-lists',
   'list-site-list-items',
 ];
 
 describe('PR 7 registration', () => {
-  it('all 10 new tools are present in ALL_TOOLS', () => {
+  it('all directory/SharePoint tools are present in ALL_TOOLS', () => {
     for (const name of NEW_TOOLS) {
       expect(findTool(name), `missing ${name}`).toBeDefined();
     }
@@ -126,8 +125,8 @@ describe('PR 7 runtime — paths and queries', () => {
     expect(path).toContain('search=Finance');
   });
 
-  it('list-drive-folder-children threads drive-id + item-id into the path', async () => {
-    await executeTool(findTool('list-drive-folder-children'), mockGraphClient, {
+  it('sharepoint-drive-children-list threads drive-id + driveItem-id into the path', async () => {
+    await executeTool(findTool('sharepoint-drive-children-list'), mockGraphClient, {
       'drive-id': 'b!abc',
       'driveItem-id': '01ABCDEF',
     });
@@ -135,13 +134,22 @@ describe('PR 7 runtime — paths and queries', () => {
     expect(path).toContain('/drives/b!abc/items/01ABCDEF/children');
   });
 
-  it('get-drive-item-by-id GETs /drives/{drive-id}/items/{driveItem-id}', async () => {
-    await executeTool(findTool('get-drive-item-by-id'), mockGraphClient, {
+  it('sharepoint-drive-children-list lists the drive root when driveItem-id is omitted', async () => {
+    await executeTool(findTool('sharepoint-drive-children-list'), mockGraphClient, {
+      'drive-id': 'b!abc',
+    });
+    const path = graphRequest.mock.calls[0][0] as string;
+    expect(path).toContain('/drives/b!abc/root/children');
+    expect(path).not.toContain('driveItem-id');
+  });
+
+  it('sharepoint-drive-item-get GETs /drives/{drive-id}/items/{driveItem-id}', async () => {
+    await executeTool(findTool('sharepoint-drive-item-get'), mockGraphClient, {
       'drive-id': 'd1',
       'driveItem-id': 'i1',
     });
     const [path, opts] = graphRequest.mock.calls[0] as [string, { method: string }];
-    expect(path).toBe('/drives/d1/items/i1');
+    expect(path).toMatch(/^\/drives\/d1\/items\/i1/);
     expect(opts.method).toBe('GET');
   });
 
@@ -214,5 +222,33 @@ describe('PR 7 policy gating', () => {
     );
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('Policy denied');
+  });
+});
+
+describe('OneDrive drive consolidation (U4)', () => {
+  let mockGraphClient: GraphClient;
+  let graphRequest: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    graphRequest = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: '{}' }] });
+    mockGraphClient = { graphRequest } as unknown as GraphClient;
+  });
+
+  it('drive-children-list targets the OneDrive root when item-id is omitted', async () => {
+    await executeTool(findTool('drive-children-list'), mockGraphClient, {});
+    expect(graphRequest.mock.calls[0][0] as string).toContain('/me/drive/root/children');
+  });
+
+  it('drive-children-list targets a folder when item-id is given, without leaking it', async () => {
+    await executeTool(findTool('drive-children-list'), mockGraphClient, { 'item-id': 'XYZ' });
+    const path = graphRequest.mock.calls[0][0] as string;
+    expect(path).toContain('/me/drive/items/XYZ/children');
+    expect(path).not.toContain('item-id=');
+  });
+
+  it('drive-item-get returns the OneDrive root item when item-id is omitted', async () => {
+    await executeTool(findTool('drive-item-get'), mockGraphClient, {});
+    expect(graphRequest.mock.calls[0][0] as string).toMatch(/^\/me\/drive\/root/);
   });
 });

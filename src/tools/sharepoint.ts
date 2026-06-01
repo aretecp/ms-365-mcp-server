@@ -7,9 +7,9 @@ const SITE_ID_HINT =
 
 const DRIVE_LISTING_TIP =
   "To fetch a file's bytes, use download-bytes with target " +
-  '`/drives/{drive-id}/items/{item-id}/content`. The /me/drive tools (get-drive-root-item, ' +
-  'list-folder-files, get-drive-item) cover OneDrive; these *-by-id variants cover SharePoint ' +
-  'document libraries and any other drive you have access to.';
+  '`/drives/{drive-id}/items/{item-id}/content`. The OneDrive tools (drive-children-list, ' +
+  'drive-item-get) cover the signed-in user\'s OneDrive; these sharepoint-drive-* tools cover ' +
+  'SharePoint document libraries and any other drive you have access to.';
 
 export const sharepointTools: readonly Tool[] = [
   // ---------- Sites ----------
@@ -82,35 +82,29 @@ export const sharepointTools: readonly Tool[] = [
   // ---------- Drive contents (any drive by id) ----------
 
   {
-    name: 'list-drive-root-children',
+    name: 'sharepoint-drive-children-list',
     description:
-      "List the items (files and folders) at the root of a drive by drive-id. Use this for any drive — SharePoint document library or a user's OneDrive — once you have the drive-id from list-site-drives.",
+      "List items (files and folders) in a SharePoint document library or any drive by drive-id (from list-site-drives). Omit driveItem-id for the drive root; pass a folder driveItem-id to list inside it. For the signed-in user's OneDrive, use drive-children-list instead.",
     method: 'GET',
     path: '/drives/{drive-id}/root/children',
     scopes: ['Sites.Read.All'],
+    projection: 'driveItem',
+    resolverParams: ['drive-id', 'driveItem-id'],
+    pathResolver: (p) => {
+      const drive = encodeURIComponent(String(p['drive-id'] ?? ''));
+      return typeof p['driveItem-id'] === 'string' && p['driveItem-id'].length > 0
+        ? `/drives/${drive}/items/${encodeURIComponent(p['driveItem-id'])}/children`
+        : `/drives/${drive}/root/children`;
+    },
     params: [
-      { name: 'drive-id', location: 'path', schema: z.string().describe('Drive id') },
-      OData.filter,
-      OData.select,
-      OData.orderby,
-      OData.top,
-      OData.skip,
-    ],
-    llmTip: DRIVE_LISTING_TIP,
-  },
-  {
-    name: 'list-drive-folder-children',
-    description:
-      'List the items inside a folder in a specific drive, addressed by drive-id + folder item-id.',
-    method: 'GET',
-    path: '/drives/{drive-id}/items/{driveItem-id}/children',
-    scopes: ['Sites.Read.All'],
-    params: [
-      { name: 'drive-id', location: 'path', schema: z.string().describe('Drive id') },
+      { name: 'drive-id', location: 'query', schema: z.string().describe('Drive id (from list-site-drives)') },
       {
         name: 'driveItem-id',
-        location: 'path',
-        schema: z.string().describe('Folder item id within the drive'),
+        location: 'query',
+        schema: z
+          .string()
+          .describe('Optional folder item id within the drive. Omit for the drive root.')
+          .optional(),
       },
       OData.filter,
       OData.select,
@@ -121,18 +115,29 @@ export const sharepointTools: readonly Tool[] = [
     llmTip: DRIVE_LISTING_TIP,
   },
   {
-    name: 'get-drive-item-by-id',
+    name: 'sharepoint-drive-item-get',
     description:
-      'Get metadata for a single item (file or folder) in any drive, addressed by drive-id + item-id.',
+      'Get metadata for a single item (file or folder) in a SharePoint document library or any drive by drive-id. Omit driveItem-id for the drive root item; pass an item-id for a specific item.',
     method: 'GET',
-    path: '/drives/{drive-id}/items/{driveItem-id}',
+    path: '/drives/{drive-id}/root',
     scopes: ['Sites.Read.All'],
+    projection: 'driveItem',
+    resolverParams: ['drive-id', 'driveItem-id'],
+    pathResolver: (p) => {
+      const drive = encodeURIComponent(String(p['drive-id'] ?? ''));
+      return typeof p['driveItem-id'] === 'string' && p['driveItem-id'].length > 0
+        ? `/drives/${drive}/items/${encodeURIComponent(p['driveItem-id'])}`
+        : `/drives/${drive}/root`;
+    },
     params: [
-      { name: 'drive-id', location: 'path', schema: z.string().describe('Drive id') },
+      { name: 'drive-id', location: 'query', schema: z.string().describe('Drive id (from list-site-drives)') },
       {
         name: 'driveItem-id',
-        location: 'path',
-        schema: z.string().describe('Item id within the drive'),
+        location: 'query',
+        schema: z
+          .string()
+          .describe('Optional item id within the drive. Omit for the drive root item.')
+          .optional(),
       },
       OData.select,
       OData.expand,

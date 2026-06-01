@@ -35,9 +35,8 @@ defaults:
     - get-calendar-view
 
     # Files / OneDrive (read)
-    - get-drive-root-item
-    - list-folder-files
-    - get-drive-item
+    - drive-children-list
+    - drive-item-get
 
     # Identity
     - get-me
@@ -50,9 +49,8 @@ defaults:
     - list-sites
     - get-site
     - list-site-drives
-    - list-drive-root-children
-    - list-drive-folder-children
-    - get-drive-item-by-id
+    - sharepoint-drive-children-list
+    - sharepoint-drive-item-get
     - list-site-lists
     - list-site-list-items
 
