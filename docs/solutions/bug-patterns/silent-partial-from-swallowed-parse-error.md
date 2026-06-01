@@ -1,11 +1,11 @@
 ---
-title: "Never return a partial result as success: swallowed parse errors hide data-completeness failures"
-module: "ms-365-mcp-server"
+title: 'Never return a partial result as success: swallowed parse errors hide data-completeness failures'
+module: 'ms-365-mcp-server'
 date: 2026-06-01
 problem_type: bug_pattern
 component: tooling
 severity: high
-applies_when: "An aggregation/merge step (pagination, batching, joining) parses or re-serializes upstream data inside a try whose catch only logs, and the surrounding code returns a success result regardless of whether the merge actually ran."
+applies_when: 'An aggregation/merge step (pagination, batching, joining) parses or re-serializes upstream data inside a try whose catch only logs, and the surrounding code returns a success result regardless of whether the merge actually ran.'
 related_components:
   - serialization
 tags:
@@ -23,7 +23,7 @@ tags:
 
 `fetchAllPages` on the MCP list tools is supposed to follow `@odata.nextLink` and merge every Graph page into one response. The merge began with `JSON.parse(response.content[0].text)` inside a `try` whose `catch` only logged (`logger.error(...)`). The output format, however, is fixed at `GraphClient` construction (`new GraphClient(this.options.toon ? 'toon' : 'json')`) from `--toon` / `MS365_MCP_OUTPUT_FORMAT`. In TOON mode the response text is **not JSON**, so the very first `JSON.parse` threw, the catch swallowed the error, and `executeTool` returned the single first page with `isError: false`.
 
-The result was the worst kind of bug: the model received page 1 only, labeled as a complete success, and had no way to know the rest of the data set existed. This silently violated the module's own cardinal rule — *never return a partial result as a success*.
+The result was the worst kind of bug: the model received page 1 only, labeled as a complete success, and had no way to know the rest of the data set existed. This silently violated the module's own cardinal rule — _never return a partial result as a success_.
 
 ## Guidance
 

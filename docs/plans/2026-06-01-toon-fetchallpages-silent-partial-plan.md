@@ -9,7 +9,7 @@ In `src/tool-runtime.ts`, `executeTool` runs a `fetchAllPages` merge block (line
 very first thing it does is:
 
 ```ts
-const combined = JSON.parse(response.content[0].text);   // line 414
+const combined = JSON.parse(response.content[0].text); // line 414
 ```
 
 The whole merge — following `@odata.nextLink`, concatenating page `value` arrays, deleting
@@ -84,15 +84,15 @@ mock-based tests can stub.
    - **Before** the `try`/`JSON.parse`: if `graphClient.format === 'toon'`, do **not** attempt the
      merge. Return an explicit error result (reuse the existing `JSON.stringify({ error, tip })`
      shape used elsewhere in this file, e.g. `policyDeniedResult`) with `isError: true` and a
-     message like: *"fetchAllPages is not supported in TOON output mode: page merging requires JSON
+     message like: _"fetchAllPages is not supported in TOON output mode: page merging requires JSON
      and would silently drop pages. Re-run without --toon / MS365_MCP_OUTPUT_FORMAT=toon to export
-     all pages, or page manually."* Record it in `toolCallLog` consistent with the other early
+     all pages, or page manually."_ Record it in `toolCallLog` consistent with the other early
      returns. (A small `paginationUnavailableResult(tool, message)` helper mirroring
      `preconditionFailedResult` keeps this clean.)
    - **Change the `catch`** (line 453-455): on a merge/parse error in JSON mode, stop returning the
      untouched single page as success. Return `isError: true` with a clear message (e.g.
-     *"Pagination failed while merging pages for tool '<name>': <err>. The result may be
-     incomplete; not returning a partial page as success."*) and record it in `toolCallLog`.
+     _"Pagination failed while merging pages for tool '<name>': <err>. The result may be
+     incomplete; not returning a partial page as success."_) and record it in `toolCallLog`.
      The merge must succeed fully or the call must error — never a silent partial.
    - Preserve the JSON happy path exactly (lines 414–452 unchanged): successful multi-page merge in
      JSON mode still concatenates pages, updates `@odata.count`, deletes `@odata.nextLink`, and
@@ -116,7 +116,7 @@ Assertions:
 
 1. **`refuses fetchAllPages in TOON mode (no silent single page)`**
    - GraphClient with `format: 'toon'`; `graphRequest` returns a single TOON-encoded page that
-     *contains* an `@odata.nextLink` (i.e. more pages exist).
+     _contains_ an `@odata.nextLink` (i.e. more pages exist).
    - Call `executeTool(mailListTool, gc, { fetchAllPages: true })`.
    - Assert `result.isError === true` and the error text mentions TOON / not supported.
    - Assert the result is **not** the silent single page (no successful `value`-only payload with

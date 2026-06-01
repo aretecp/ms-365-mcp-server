@@ -17,11 +17,7 @@ import {
 } from './tools/index.js';
 import { toolCallLog, redactArgs, redactResponse } from './admin/tool-call-log.js';
 import { MINIMAL_SELECT } from './tools/projections.js';
-import {
-  resolveEnabledToolsets,
-  isToolEnabled,
-  type ToolsetSelection,
-} from './toolset-config.js';
+import { resolveEnabledToolsets, isToolEnabled, type ToolsetSelection } from './toolset-config.js';
 
 /** Hard cap on Graph `$top` for list requests, configurable via env. */
 function maxTopFromEnv(): number | undefined {
@@ -134,7 +130,9 @@ function shapeResponseSize(text: string): string {
     }
     kept = Math.floor(kept / 2);
   }
-  logger.info(`Truncated list response from ${items.length} to ${kept} items (response-size ceiling)`);
+  logger.info(
+    `Truncated list response from ${items.length} to ${kept} items (response-size ceiling)`
+  );
   return JSON.stringify(envelope);
 }
 
