@@ -1,3 +1,9 @@
+## [2.6.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.5.0...v2.6.0) (2026-06-01)
+
+### New Features
+
+* **prod:** expose full tool surface (MS365_MCP_TOOLSETS=all) ([#24](https://github.com/aretecp/ms-365-mcp-server/issues/24)) ([ff18c38](https://github.com/aretecp/ms-365-mcp-server/commit/ff18c3870ee9f5acb3f751e0594feb35bd1a6b58))
+
 ## [2.5.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.4.1...v2.5.0) (2026-06-01)
 
 ### New Features
