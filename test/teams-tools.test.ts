@@ -22,8 +22,7 @@ const READ_NAMES = [
   'list-channel-messages',
   'get-channel-message',
   'list-channel-message-replies',
-  'find-online-meeting',
-  'get-online-meeting',
+  'online-meeting-find',
   'list-meeting-transcripts',
 ];
 
@@ -37,7 +36,7 @@ const WRITE_NAMES = [
 ];
 
 describe('Teams-tool registration', () => {
-  it('all 18 Teams tools are present in ALL_TOOLS', () => {
+  it('all Teams tools are present in ALL_TOOLS', () => {
     for (const name of [...READ_NAMES, ...WRITE_NAMES]) {
       expect(findTool(name), `missing ${name}`).toBeDefined();
     }
@@ -114,19 +113,29 @@ describe('Teams-tool runtime — representative reads', () => {
     expect(path).toContain('/chats/19%3Aabc%40thread.v2/messages');
   });
 
-  it('find-online-meeting passes filter through as $filter', async () => {
+  it('online-meeting-find by join-web-url builds the $filter server-side', async () => {
     const joinUrl = 'https://teams.microsoft.com/l/meetup-join/abc';
-    await executeTool(findTool('find-online-meeting'), mockGraphClient, {
-      filter: `joinWebUrl eq '${joinUrl}'`,
-    });
+    await executeTool(findTool('online-meeting-find'), mockGraphClient, { 'join-web-url': joinUrl });
     const path = graphRequest.mock.calls[0][0] as string;
-    expect(path).toContain('$filter=');
+    expect(path).toContain('/me/onlineMeetings?$filter=');
     expect(path).toContain('joinWebUrl');
-    // Spaces in the OData filter become %20 (encodeURIComponent default). Apostrophes
-    // are RFC 3986 unreserved and stay as literal `'` — Graph requires them around the
-    // string literal in `joinWebUrl eq '<url>'`.
+    // Spaces become %20; the model never hand-writes OData (the runtime builds it).
     expect(path).toContain('%20eq%20');
-    expect(path).toContain("'");
+  });
+
+  it('online-meeting-find by meeting-id GETs the meeting path', async () => {
+    await executeTool(findTool('online-meeting-find'), mockGraphClient, { 'meeting-id': 'MMM' });
+    expect(graphRequest.mock.calls[0][0] as string).toMatch(/^\/me\/onlineMeetings\/MMM/);
+  });
+
+  it('online-meeting-find refuses neither / both lookup keys (precondition)', async () => {
+    const neither = await executeTool(findTool('online-meeting-find'), mockGraphClient, {});
+    expect(neither.isError).toBe(true);
+    const both = await executeTool(findTool('online-meeting-find'), mockGraphClient, {
+      'meeting-id': 'a',
+      'join-web-url': 'b',
+    });
+    expect(both.isError).toBe(true);
   });
 
   it('list-channel-message-replies threads team / channel / message ids into the path', async () => {
@@ -225,7 +234,7 @@ describe('Teams-tool policy gating', () => {
     return { graphRequest } as unknown as GraphClient;
   }
 
-  const defaultsAllowingReads = ['list-chats', 'list-joined-teams', 'find-online-meeting'];
+  const defaultsAllowingReads = ['list-chats', 'list-joined-teams', 'online-meeting-find'];
 
   it('reads in defaults.allow let a user with no per-user entry through', async () => {
     const policy = Policy.fromDocument({ defaults: { allow: defaultsAllowingReads } });

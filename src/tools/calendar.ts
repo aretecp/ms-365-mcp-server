@@ -123,26 +123,6 @@ const eventWriteSchema = z
 
 export const calendarTools: readonly Tool[] = [
   {
-    name: 'list-calendar-events',
-    description:
-      "List the signed-in user's calendar events (not expanded; recurring events show as the series master). For an expanded window over a date range, use get-calendar-view instead.",
-    method: 'GET',
-    path: '/me/events',
-    scopes: ['Calendars.Read'],
-    supportsTimezone: true,
-    supportsExpandExtendedProperties: true,
-    params: [
-      OData.filter,
-      OData.search,
-      OData.select,
-      OData.orderby,
-      OData.top,
-      OData.skip,
-      OData.count,
-      OData.expand,
-    ],
-  },
-  {
     name: 'get-calendar-event',
     description: 'Get a single calendar event by id.',
     method: 'GET',
@@ -161,12 +141,13 @@ export const calendarTools: readonly Tool[] = [
     ],
   },
   {
-    name: 'get-calendar-view',
+    name: 'calendar-view',
     description:
-      "Expanded calendar view between two times. Recurring events are expanded into individual occurrences over the window — usually what an LLM actually wants when asked 'what's on the calendar this week'.",
+      "Expanded calendar view between two times. Recurring events are expanded into individual occurrences over the window — usually what an LLM actually wants when asked 'what's on the calendar this week'. (This supersedes the old unexpanded list-calendar-events.)",
     method: 'GET',
     path: '/me/calendarView',
     scopes: ['Calendars.Read'],
+    projection: 'event',
     supportsTimezone: true,
     supportsExpandExtendedProperties: true,
     params: [

@@ -1,5 +1,21 @@
 import { z } from 'zod';
-import { OData, type Tool } from './types.js';
+import { OData, type Tool, type ToolPrecondition } from './types.js';
+
+/**
+ * Guard for online-meeting-find: exactly one lookup key (meeting-id OR
+ * join-web-url). A usage invariant, not a security boundary — the Graph call is
+ * read-only either way; this just refuses an ambiguous/empty lookup in code so
+ * the model gets a clear error instead of a confusing Graph response.
+ */
+const assertExactlyOneMeetingKey: ToolPrecondition = async (_graphClient, params) => {
+  const hasId = typeof params['meeting-id'] === 'string' && params['meeting-id'].length > 0;
+  const hasUrl = typeof params['join-web-url'] === 'string' && params['join-web-url'].length > 0;
+  if (hasId === hasUrl) {
+    throw new Error(
+      `online-meeting-find requires exactly one of meeting-id or join-web-url (got ${hasId ? 'both' : 'neither'}).`
+    );
+  }
+};
 
 /** Body shape on a Teams chatMessage. HTML is the Teams default for client display. */
 const messageItemBodySchema = z
@@ -275,41 +291,40 @@ export const teamsTools: readonly Tool[] = [
   // ---------- Online meetings (read) ----------
 
   {
-    name: 'find-online-meeting',
+    name: 'online-meeting-find',
     description:
-      'Find an online meeting by its joinWebUrl. Pass the joinWebUrl from parse-teams-url (if the user supplied a /meet/ or recap URL) or directly. Returns the meeting metadata including id.',
+      "Resolve a single online meeting by id OR by joinWebUrl (pass exactly one). Use meeting-id when you already have it; use join-web-url for a user-supplied Teams link (normalize it with parse-teams-url first). Returns the meeting metadata including id. Replaces the old find-online-meeting + get-online-meeting pair.",
     method: 'GET',
     path: '/me/onlineMeetings',
     scopes: ['OnlineMeetings.Read'],
+    precondition: assertExactlyOneMeetingKey,
+    resolverParams: ['meeting-id', 'join-web-url'],
+    pathResolver: (p) => {
+      const id = p['meeting-id'];
+      if (typeof id === 'string' && id.length > 0) {
+        return `/me/onlineMeetings/${encodeURIComponent(id)}`;
+      }
+      const url = String(p['join-web-url'] ?? '');
+      // Build the $filter in code so the model never hand-writes OData.
+      return `/me/onlineMeetings?$filter=${encodeURIComponent(`joinWebUrl eq '${url}'`)}`;
+    },
     params: [
-      // The runtime maps `filter` → `$filter` on the wire. We accept joinWebUrl as a typed param
-      // for ergonomics, but Graph expects the value baked into a $filter expression — so the
-      // LLM sets `filter` directly using the tip below.
       {
-        name: 'filter',
+        name: 'meeting-id',
+        location: 'query',
+        schema: z.string().describe('Online meeting id. Provide this OR join-web-url, not both.').optional(),
+      },
+      {
+        name: 'join-web-url',
         location: 'query',
         schema: z
           .string()
-          .describe(
-            "$filter expression. Format MUST be: joinWebUrl eq '<URL>' (single quotes mandatory)."
-          ),
+          .describe('Teams joinWebUrl (from parse-teams-url). Provide this OR meeting-id, not both.')
+          .optional(),
       },
       OData.select,
     ],
-    llmTip:
-      "Build the filter as: joinWebUrl eq 'https://teams.microsoft.com/l/meetup-join/...'. " +
-      'Single quotes are mandatory. Pair with parse-teams-url to normalize user-supplied URLs first.',
-  },
-  {
-    name: 'get-online-meeting',
-    description: "Get a single online meeting by id (from the signed-in user's perspective).",
-    method: 'GET',
-    path: '/me/onlineMeetings/{meeting-id}',
-    scopes: ['OnlineMeetings.Read'],
-    params: [
-      { name: 'meeting-id', location: 'path', schema: z.string().describe('Online meeting id') },
-      OData.select,
-    ],
+    llmTip: 'Pair with parse-teams-url to normalize a user-supplied Teams link before passing join-web-url.',
   },
   {
     name: 'list-meeting-transcripts',

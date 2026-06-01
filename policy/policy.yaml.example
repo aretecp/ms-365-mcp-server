@@ -30,9 +30,8 @@ defaults:
     - list-mail-attachments
 
     # Calendar (read)
-    - list-calendar-events
     - get-calendar-event
-    - get-calendar-view
+    - calendar-view
 
     # Files / OneDrive (read)
     - drive-children-list
@@ -64,8 +63,7 @@ defaults:
     - list-channel-messages
     - get-channel-message
     - list-channel-message-replies
-    - find-online-meeting
-    - get-online-meeting
+    - online-meeting-find
     - list-meeting-transcripts
 
     # Utilities
