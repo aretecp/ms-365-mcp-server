@@ -8,6 +8,13 @@ import type { ResourceKind } from './projections.js';
 export type ParamLocation = 'path' | 'query' | 'header' | 'body';
 
 /**
+ * Domain group a tool belongs to, for static (deployment-time) progressive
+ * disclosure. A curated cross-domain "core" set always registers; the rest of
+ * each domain is gated behind enabling that toolset (see `toolset-config.ts`).
+ */
+export type Toolset = 'mail' | 'calendar' | 'files' | 'directory' | 'teams' | 'sharepoint';
+
+/**
  * Server-side guard invoked before a tool's main Graph call. Throw to refuse
  * the call with a structured error returned to the model.
  *
@@ -127,6 +134,12 @@ export interface Tool {
   pathResolver?: (params: Record<string, unknown>) => string;
   /** Param names consumed by {@link Tool.pathResolver}; skipped in the param loop. */
   resolverParams?: string[];
+  /**
+   * Domain group for static progressive disclosure. Usually assigned per-domain
+   * in `tools/index.ts`; a tool may override. Tools in the curated core set
+   * (`toolset-config.ts`) register regardless of this tag.
+   */
+  toolset?: Toolset;
 }
 
 /**

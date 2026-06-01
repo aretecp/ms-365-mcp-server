@@ -66,7 +66,7 @@ describe('Teams-tool registration', () => {
       }),
     };
     const graphClient = { graphRequest: vi.fn() } as unknown as GraphClient;
-    registerTools(mockServer as never, graphClient);
+    registerTools(mockServer as never, graphClient, { toolsets: 'all' });
 
     for (const name of READ_NAMES) {
       const call = calls.find((c) => c[0] === name);

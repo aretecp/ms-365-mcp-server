@@ -17,6 +17,12 @@ import {
 } from './tools/index.js';
 import { toolCallLog, redactArgs, redactResponse } from './admin/tool-call-log.js';
 import { MINIMAL_SELECT } from './tools/projections.js';
+import {
+  resolveEnabledToolsets,
+  isToolEnabled,
+  type ToolsetSelection,
+} from './toolset-config.js';
+import type { PolicySummary } from './policy/index.js';
 
 /** Hard cap on Graph `$top` for list requests, configurable via env. */
 function maxTopFromEnv(): number | undefined {
@@ -665,6 +671,46 @@ function registerUtilityToolWithMcp(
 
 export interface RegisterToolsOptions {
   policy?: PolicyChecker;
+  /**
+   * Which toolsets to register. Defaults to the `MS365_MCP_TOOLSETS` env value
+   * (unset = core only). Pass `'all'` to register everything (used by tests).
+   */
+  toolsets?: ToolsetSelection;
+}
+
+/**
+ * Surface drift between the policy file and the registered tool set so operators
+ * can reconcile the two control planes:
+ *   - WARN: a policy allow/deny entry naming a tool that is not registered
+ *     (toolset disabled or stale name) — calls would be denied as unknown.
+ *   - INFO: how many registered tools are absent from defaults.allow (they fail
+ *     closed until added to a per-user allow block — expected for write tools).
+ */
+function logPolicyRegistrationDrift(
+  policy: PolicyChecker | undefined,
+  registeredNames: Set<string>
+): void {
+  const summarizable = policy as { summary?: () => PolicySummary } | undefined;
+  if (!summarizable?.summary) return;
+  const summary = summarizable.summary();
+  const policyNames = new Set<string>([
+    ...summary.defaultAllow,
+    ...summary.users.flatMap((u) => [...u.allow, ...u.deny]),
+  ]);
+  for (const name of policyNames) {
+    if (!registeredNames.has(name)) {
+      logger.warn(
+        `Policy references tool '${name}' which is not registered (toolset disabled or renamed) — calls would be denied as unknown.`
+      );
+    }
+  }
+  const defaultAllow = new Set(summary.defaultAllow);
+  const notInDefaults = [...registeredNames].filter((n) => !defaultAllow.has(n));
+  if (notInDefaults.length > 0) {
+    logger.info(
+      `${notInDefaults.length} registered tool(s) are not in defaults.allow and will be denied until added to a policy allow block.`
+    );
+  }
 }
 
 export function registerTools(
@@ -674,8 +720,15 @@ export function registerTools(
 ): number {
   let registeredCount = 0;
   let failedCount = 0;
+  let skippedCount = 0;
+  const enabled = resolveEnabledToolsets(options.toolsets);
+  const registeredNames = new Set<string>();
 
   for (const tool of ALL_TOOLS) {
+    if (!isToolEnabled(tool, enabled)) {
+      skippedCount++;
+      continue;
+    }
     const description = tool.llmTip
       ? `${tool.description}\n\n💡 TIP: ${tool.llmTip}`
       : tool.description;
@@ -694,24 +747,30 @@ export function registerTools(
         async (params) => executeTool(tool, graphClient, params, options.policy)
       );
       registeredCount++;
+      registeredNames.add(tool.name);
     } catch (error) {
       logger.error(`Failed to register tool ${tool.name}: ${(error as Error).message}`);
       failedCount++;
     }
   }
 
+  // Utility tools always register (core utilities, no toolset gating).
   const utilityCtx: UtilityToolContext = { graphClient };
   for (const utility of utilityTools) {
     try {
       registerUtilityToolWithMcp(server, utility, utilityCtx, options.policy);
       registeredCount++;
+      registeredNames.add(utility.name);
     } catch (error) {
       logger.error(`Failed to register tool ${utility.name}: ${(error as Error).message}`);
       failedCount++;
     }
   }
 
-  logger.info(`Tool registration complete: ${registeredCount} registered, ${failedCount} failed`);
+  logPolicyRegistrationDrift(options.policy, registeredNames);
+  logger.info(
+    `Tool registration complete: ${registeredCount} registered, ${skippedCount} skipped (toolset disabled), ${failedCount} failed`
+  );
   return registeredCount;
 }
 
