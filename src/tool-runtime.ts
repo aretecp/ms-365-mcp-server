@@ -410,48 +410,73 @@ async function executeTool(
 
     const fetchAllPages = params.fetchAllPages === true;
     if (fetchAllPages && response?.content?.[0]?.text) {
-      try {
-        const combined = JSON.parse(response.content[0].text);
-        let allItems = combined.value || [];
-        let nextLink = combined['@odata.nextLink'];
-        let pageCount = 1;
-        const maxPages = 100;
-        const maxItems = 10_000;
+      // The page merge below parses and re-serializes JSON. In TOON output mode
+      // the response text is not JSON, so merging is impossible — refuse rather
+      // than silently return only the first page (a data-completeness failure
+      // that would let the model believe it has the full result set). See #19.
+      if (graphClient.format === 'toon') {
+        logger.error(`fetchAllPages requested in TOON output mode for ${tool.name}; refusing`);
+        response.content[0].text = JSON.stringify({
+          error:
+            'fetchAllPages is not supported in TOON output mode: pages cannot be merged. ' +
+            'Re-run the server in JSON output format (omit --toon / unset MS365_MCP_OUTPUT_FORMAT) ' +
+            'to use fetchAllPages, or narrow the request with filter/search/top.',
+        });
+        response.isError = true;
+      } else {
+        try {
+          const combined = JSON.parse(response.content[0].text);
+          let allItems = combined.value || [];
+          let nextLink = combined['@odata.nextLink'];
+          let pageCount = 1;
+          const maxPages = 100;
+          const maxItems = 10_000;
 
-        while (nextLink && pageCount < maxPages && allItems.length < maxItems) {
-          logger.info(`Fetching page ${pageCount + 1} from: ${nextLink}`);
-          const url = new URL(nextLink);
-          const nextPath = url.pathname.replace('/v1.0', '') + url.search;
-          const nextResponse = await graphClient.graphRequest(nextPath, { ...requestOptions });
-          if (nextResponse?.content?.[0]?.text) {
-            const next = JSON.parse(nextResponse.content[0].text);
-            if (Array.isArray(next.value)) allItems = allItems.concat(next.value);
-            nextLink = next['@odata.nextLink'];
-            pageCount++;
-          } else {
-            break;
+          while (nextLink && pageCount < maxPages && allItems.length < maxItems) {
+            logger.info(`Fetching page ${pageCount + 1} from: ${nextLink}`);
+            const url = new URL(nextLink);
+            const nextPath = url.pathname.replace('/v1.0', '') + url.search;
+            const nextResponse = await graphClient.graphRequest(nextPath, { ...requestOptions });
+            if (nextResponse?.content?.[0]?.text) {
+              const next = JSON.parse(nextResponse.content[0].text);
+              if (Array.isArray(next.value)) allItems = allItems.concat(next.value);
+              nextLink = next['@odata.nextLink'];
+              pageCount++;
+            } else {
+              break;
+            }
           }
-        }
 
-        if (pageCount >= maxPages) {
-          logger.warn(`Reached maximum page limit (${maxPages}) for pagination`);
-        }
-        if (allItems.length >= maxItems) {
-          logger.warn(
-            `Reached maximum item limit (${maxItems}) for pagination — truncated at ${allItems.length} items`
+          if (pageCount >= maxPages) {
+            logger.warn(`Reached maximum page limit (${maxPages}) for pagination`);
+          }
+          if (allItems.length >= maxItems) {
+            logger.warn(
+              `Reached maximum item limit (${maxItems}) for pagination — truncated at ${allItems.length} items`
+            );
+          }
+
+          combined.value = allItems;
+          if (combined['@odata.count']) combined['@odata.count'] = allItems.length;
+          delete combined['@odata.nextLink'];
+
+          response.content[0].text = JSON.stringify(combined);
+          logger.info(
+            `Pagination complete: collected ${allItems.length} items across ${pageCount} pages`
           );
+        } catch (e) {
+          // A parse/merge failure here means we cannot guarantee a complete
+          // result set. Surface it as an error rather than falling through and
+          // returning the (possibly partial) first page as a silent success. See #19.
+          logger.error(`Error during pagination: ${e}`);
+          response.content[0].text = JSON.stringify({
+            error:
+              `fetchAllPages failed to merge all pages for ${tool.name}: ${e}. ` +
+              'The result is incomplete; do not treat it as the full set. ' +
+              'Retry, or narrow the request with filter/search/top.',
+          });
+          response.isError = true;
         }
-
-        combined.value = allItems;
-        if (combined['@odata.count']) combined['@odata.count'] = allItems.length;
-        delete combined['@odata.nextLink'];
-
-        response.content[0].text = JSON.stringify(combined);
-        logger.info(
-          `Pagination complete: collected ${allItems.length} items across ${pageCount} pages`
-        );
-      } catch (e) {
-        logger.error(`Error during pagination: ${e}`);
       }
     }
 
