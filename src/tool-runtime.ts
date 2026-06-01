@@ -16,6 +16,7 @@ import {
   type CallToolResult,
 } from './tools/index.js';
 import { toolCallLog, redactArgs, redactResponse } from './admin/tool-call-log.js';
+import { MINIMAL_SELECT } from './tools/projections.js';
 
 /** Hard cap on Graph `$top` for list requests, configurable via env. */
 function maxTopFromEnv(): number | undefined {
@@ -40,6 +41,122 @@ function clampTopQueryParam(queryParams: Record<string, string>): void {
   queryParams['$top'] = String(cap);
 }
 
+/** Positive-integer env override with a fallback, shared by the default-$top and response-ceiling knobs. */
+function positiveIntFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) {
+    logger.warn(`Ignoring invalid ${name}=${JSON.stringify(raw)} (use a positive integer)`);
+    return fallback;
+  }
+  return n;
+}
+
+/** Default page size injected for list GETs when the caller omits `$top`. */
+function defaultTop(): number {
+  return positiveIntFromEnv('MS365_MCP_DEFAULT_TOP', 15);
+}
+
+/**
+ * Hard char ceiling for a single tool response. ~4 chars/token, so the default
+ * ~100k chars approximates Claude Code's ~25k-token tool-response cap. A list
+ * response over the ceiling is truncated at an element boundary and wrapped in
+ * a marked envelope (see {@link shapeResponseSize}).
+ */
+function maxResponseChars(): number {
+  return positiveIntFromEnv('MS365_MCP_MAX_RESPONSE_CHARS', 100_000);
+}
+
+/** A list tool exposes the OData `top` param; by-id reads do not. Used to gate default `$top`. */
+function isListTool(tool: Tool): boolean {
+  return tool.method === 'GET' && tool.params.some((p) => p.name === 'top');
+}
+
+/** Base64 opaque cursor from a Graph `@odata.nextLink` (path+query, minus the version segment). */
+function nextLinkToCursor(nextLink: string): string | undefined {
+  try {
+    const url = new URL(nextLink);
+    return Buffer.from(`${url.pathname.replace('/v1.0', '')}${url.search}`).toString('base64');
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Enforce the response-size ceiling on a JSON list payload. Only collections
+ * (`{ value: [...] }`) are reshaped — non-collection and non-JSON (binary)
+ * responses are returned untouched. When over budget, items are dropped from
+ * the end (halving) until the serialized envelope fits, and the result is
+ * wrapped as `{ value, truncated, returnedCount, totalCount, hint, nextCursor? }`
+ * — keeping the Graph `value` key so callers/`fetchAllPages` shapes still match.
+ *
+ * Note: this runs on the already-serialized JSON text, mirroring the
+ * `fetchAllPages` merge which also assumes JSON. In TOON output mode the text
+ * is not JSON, so it is returned untouched — default `$top` + projection bound
+ * those payloads instead.
+ */
+function shapeResponseSize(text: string): string {
+  const cap = maxResponseChars();
+  if (text.length <= cap) return text;
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  const items = parsed['value'];
+  if (!Array.isArray(items)) return text;
+
+  const nextLink = typeof parsed['@odata.nextLink'] === 'string' ? parsed['@odata.nextLink'] : undefined;
+  const cursor = nextLink ? nextLinkToCursor(nextLink) : undefined;
+
+  let kept = items.length;
+  let envelope: Record<string, unknown> = parsed;
+  while (kept > 0) {
+    envelope = {
+      value: items.slice(0, kept),
+      truncated: true,
+      returnedCount: kept,
+      totalCount: items.length,
+      hint:
+        `Response truncated to ${kept} of ${items.length} items to fit the context budget. ` +
+        (cursor
+          ? 'Pass nextCursor to continue, or narrow with $filter/$search/$select.'
+          : 'Narrow the request with $filter/$search/$select to see more.'),
+      ...(cursor ? { nextCursor: cursor } : {}),
+    };
+    if (JSON.stringify(envelope).length <= cap || kept === 1) break;
+    kept = Math.floor(kept / 2);
+  }
+  logger.info(`Truncated list response from ${items.length} to ${kept} items (response-size ceiling)`);
+  return JSON.stringify(envelope);
+}
+
+/**
+ * Inject the default field projection and page size for read tools when the
+ * caller omitted them. Projection is skipped when `response_format: 'detailed'`.
+ */
+function applyResponseDefaults(
+  tool: Tool,
+  queryParams: Record<string, string>,
+  params: Record<string, unknown>
+): void {
+  const wantsDetailed = params.response_format === 'detailed';
+  if (
+    tool.projection &&
+    tool.method === 'GET' &&
+    !wantsDetailed &&
+    queryParams['$select'] === undefined
+  ) {
+    queryParams['$select'] = MINIMAL_SELECT[tool.projection];
+  }
+  if (isListTool(tool) && queryParams['$top'] === undefined && params.fetchAllPages !== true) {
+    queryParams['$top'] = String(defaultTop());
+  }
+}
+
 /** Returns the Graph URL form (`$top`, `$filter`, ...) of an OData query param name. */
 function odataQueryKey(rawName: string): string {
   const lower = rawName.toLowerCase();
@@ -57,6 +174,7 @@ const CONTROL_PARAM_NAMES = new Set([
   'excludeResponse',
   'timezone',
   'expandExtendedProperties',
+  'response_format',
 ]);
 
 function policyDeniedResult(tool: Tool, upn: string | null): CallToolResult {
@@ -194,6 +312,7 @@ async function executeTool(
       }
     }
 
+    applyResponseDefaults(tool, queryParams, params);
     clampTopQueryParam(queryParams);
 
     const preferValues: string[] = [];
@@ -318,6 +437,13 @@ async function executeTool(
       }
     }
 
+    // Enforce the response-size ceiling on JSON list payloads (binary/download
+    // responses use rawResponse and are exempt). Runs after the fetchAllPages
+    // merge so it bounds the merged result too.
+    if (!requestOptions.rawResponse && response?.content?.[0]?.text) {
+      response.content[0].text = shapeResponseSize(response.content[0].text);
+    }
+
     const result: CallToolResult = {
       content: response.content.map((item) => ({ type: 'text' as const, text: item.text })),
       _meta: response._meta,
@@ -389,6 +515,17 @@ function buildMcpParamSchema(tool: Tool): Record<string, z.ZodTypeAny> {
         'Follow @odata.nextLink and merge up to 100 pages into one response. ' +
           'Can return enormous payloads — only when the user explicitly needs a full export. ' +
           'Prefer a small top first, then paginate or narrow with filter/search.'
+      )
+      .optional();
+  }
+
+  if (tool.projection) {
+    paramSchema['response_format'] = z
+      .enum(['minimal', 'detailed'])
+      .describe(
+        "Field detail. 'minimal' (default) returns a compact, high-signal field set; " +
+          "'detailed' returns the full Graph object (more tokens, raw ids). Omit for minimal. " +
+          'Not a confidentiality boundary — any caller allowed on this tool may request detailed.'
       )
       .optional();
   }

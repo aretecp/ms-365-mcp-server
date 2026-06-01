@@ -132,6 +132,7 @@ export const mailTools: readonly Tool[] = [
     method: 'GET',
     path: '/me/messages',
     scopes: ['Mail.Read'],
+    projection: 'mail',
     params: [
       OData.filter,
       OData.search,
@@ -174,6 +175,7 @@ export const mailTools: readonly Tool[] = [
     method: 'GET',
     path: '/me/mailFolders/{mailFolder-id}/messages',
     scopes: ['Mail.Read'],
+    projection: 'mail',
     params: [
       {
         name: 'mailFolder-id',

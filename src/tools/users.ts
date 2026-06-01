@@ -18,6 +18,7 @@ export const usersTools: readonly Tool[] = [
     method: 'GET',
     path: '/users',
     scopes: ['User.ReadBasic.All'],
+    projection: 'user',
     // ConsistencyLevel: eventual is required by Graph for $search and most
     // advanced $filter clauses on /users. Setting it unconditionally is safe —
     // Graph also accepts it on plain list requests.

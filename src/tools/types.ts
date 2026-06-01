@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type GraphClient from '../graph-client.js';
+import type { ResourceKind } from './projections.js';
 
 /**
  * Where a {@link ToolParam} value goes in the outbound Graph request.
@@ -69,6 +70,14 @@ export interface Tool {
    * etc. — anything that helps the model use the tool correctly.
    */
   llmTip?: string;
+  /**
+   * Resource kind for default field projection. Set on read/list tools so the
+   * runtime injects a `Minimal*` `$select` when the caller omits one (and did
+   * not pass `response_format: 'detailed'`). See {@link ResourceKind} /
+   * `projections.ts`. Omit on tools that should return their full payload by
+   * default (e.g. a by-id "get the full body" read).
+   */
+  projection?: ResourceKind;
   /** Calendar tools: adds the `timezone` MCP param mapping to Prefer header. */
   supportsTimezone?: boolean;
   /** Calendar tools: adds the `expandExtendedProperties` MCP param. */
