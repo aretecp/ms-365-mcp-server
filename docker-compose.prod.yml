@@ -67,6 +67,12 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-production}
       VERSION: ${VERSION:-}
 
+      # Tool surface: which domain toolsets register. Unset = core-only (~12
+      # tools). 'all' exposes the full hand-written surface (~44 tools: mail,
+      # calendar, files, directory, teams, sharepoint). Pure surface control —
+      # Entra scopes already cover every tool, so this needs no re-consent.
+      MS365_MCP_TOOLSETS: 'all'
+
       # Output + runtime tuning.
       MS365_MCP_OUTPUT_FORMAT: 'toon'
       NODE_ENV: 'production'
