@@ -1,33 +1,37 @@
 import { z } from 'zod';
 import { OData, type Tool } from './types.js';
 
+const itemIdParam: Tool['params'][number] = {
+  name: 'item-id',
+  location: 'query',
+  schema: z
+    .string()
+    .describe('Optional OneDrive item id. Omit to address the drive root.')
+    .optional(),
+};
+
 /**
- * v1 OneDrive surface, scoped to `/me/drive/...`. SharePoint (`/sites/...`)
- * and other-user drives are deferred to v1.5.
+ * v1 OneDrive surface, scoped to `/me/drive/...` (Files.Read). SharePoint and
+ * other-user drives live in `sharepoint.ts` under the `sharepoint` toolset
+ * (Sites.Read.All) — for SharePoint document libraries use the `sharepoint-*`
+ * tools, not these.
  */
 export const filesTools: readonly Tool[] = [
   {
-    name: 'get-drive-root-item',
+    name: 'drive-children-list',
     description:
-      "Get the signed-in user's OneDrive root folder. The returned id is the parent for list-folder-files at the top level.",
+      "List child items (files and folders) in the signed-in user's OneDrive. Omit item-id for the drive root; pass a folder item-id to list inside that folder. For SharePoint document libraries, use the sharepoint-drive-children-list tool instead.",
     method: 'GET',
-    path: '/me/drive/root',
+    path: '/me/drive/root/children',
     scopes: ['Files.Read'],
-    params: [OData.select, OData.expand],
-  },
-  {
-    name: 'list-folder-files',
-    description:
-      'List child items (files and folders) of a OneDrive folder by item id. Use get-drive-root-item first to find the root id, or pass a folder id returned from a previous list.',
-    method: 'GET',
-    path: '/me/drive/items/{item-id}/children',
-    scopes: ['Files.Read'],
+    projection: 'driveItem',
+    resolverParams: ['item-id'],
+    pathResolver: (p) =>
+      typeof p['item-id'] === 'string' && p['item-id'].length > 0
+        ? `/me/drive/items/${encodeURIComponent(p['item-id'])}/children`
+        : '/me/drive/root/children',
     params: [
-      {
-        name: 'item-id',
-        location: 'path',
-        schema: z.string().describe('Drive item id of the folder to list'),
-      },
+      itemIdParam,
       OData.filter,
       OData.select,
       OData.orderby,
@@ -41,19 +45,18 @@ export const filesTools: readonly Tool[] = [
       "To fetch a file's bytes, call download-bytes with target `/me/drive/items/{item-id}/content`.",
   },
   {
-    name: 'get-drive-item',
-    description: 'Get metadata for a OneDrive item (file or folder) by id.',
+    name: 'drive-item-get',
+    description:
+      "Get metadata for a OneDrive item (file or folder). Omit item-id for the drive root item; pass an item-id for a specific item. For SharePoint, use sharepoint-drive-item-get.",
     method: 'GET',
-    path: '/me/drive/items/{item-id}',
+    path: '/me/drive/root',
     scopes: ['Files.Read'],
-    params: [
-      {
-        name: 'item-id',
-        location: 'path',
-        schema: z.string().describe('Drive item id'),
-      },
-      OData.select,
-      OData.expand,
-    ],
+    projection: 'driveItem',
+    resolverParams: ['item-id'],
+    pathResolver: (p) =>
+      typeof p['item-id'] === 'string' && p['item-id'].length > 0
+        ? `/me/drive/items/${encodeURIComponent(p['item-id'])}`
+        : '/me/drive/root',
+    params: [itemIdParam, OData.select, OData.expand],
   },
 ];

@@ -33,22 +33,22 @@ describe('Calendar tools', () => {
   }
 
   describe('registration', () => {
-    it('registers the three v1 calendar tools', () => {
+    it('registers the v1 calendar read tools (list-calendar-events dropped)', () => {
       registerTools(mockServer as never, mockGraphClient);
       const toolNames = mockServer.tool.mock.calls.map((c: unknown[]) => c[0]);
-      expect(toolNames).toContain('list-calendar-events');
-      expect(toolNames).toContain('get-calendar-event');
-      expect(toolNames).toContain('get-calendar-view');
+      expect(toolNames).toContain('calendar-event-get');
+      expect(toolNames).toContain('calendar-view');
+      expect(toolNames).not.toContain('list-calendar-events');
     });
 
-    it.each(['list-calendar-events', 'get-calendar-event', 'get-calendar-view'])(
+    it.each(['calendar-event-get', 'calendar-view'])(
       '%s exposes the timezone control parameter',
       (name) => {
         expect(getRegisteredSchema(name)).toHaveProperty('timezone');
       }
     );
 
-    it.each(['list-calendar-events', 'get-calendar-event', 'get-calendar-view'])(
+    it.each(['calendar-event-get', 'calendar-view'])(
       '%s exposes the expandExtendedProperties control parameter',
       (name) => {
         expect(getRegisteredSchema(name)).toHaveProperty('expandExtendedProperties');
@@ -70,7 +70,7 @@ describe('Calendar tools', () => {
 
   describe('Prefer header', () => {
     it('sets outlook.timezone when timezone param is provided', async () => {
-      const tool = findTool('get-calendar-view') as Tool;
+      const tool = findTool('calendar-view') as Tool;
       await executeTool(tool, mockGraphClient, {
         startDateTime: '2026-05-22T00:00:00Z',
         endDateTime: '2026-05-29T00:00:00Z',
@@ -82,7 +82,7 @@ describe('Calendar tools', () => {
     });
 
     it('sets outlook.body-content-type=text by default on GETs', async () => {
-      const tool = findTool('get-calendar-event') as Tool;
+      const tool = findTool('calendar-event-get') as Tool;
       await executeTool(tool, mockGraphClient, { 'event-id': 'abc' });
 
       const options = graphRequest.mock.calls[0][1] as { headers: Record<string, string> };
@@ -92,7 +92,7 @@ describe('Calendar tools', () => {
 
   describe('expandExtendedProperties', () => {
     it('appends singleValueExtendedProperties to $expand when true', async () => {
-      const tool = findTool('get-calendar-event') as Tool;
+      const tool = findTool('calendar-event-get') as Tool;
       await executeTool(tool, mockGraphClient, {
         'event-id': 'abc',
         expandExtendedProperties: true,
@@ -103,7 +103,7 @@ describe('Calendar tools', () => {
     });
 
     it('merges with an existing expand value rather than overwriting', async () => {
-      const tool = findTool('get-calendar-event') as Tool;
+      const tool = findTool('calendar-event-get') as Tool;
       await executeTool(tool, mockGraphClient, {
         'event-id': 'abc',
         expand: 'attachments',
@@ -118,7 +118,7 @@ describe('Calendar tools', () => {
 
   describe('calendarView required params', () => {
     it('encodes startDateTime and endDateTime as $-prefixed query params', async () => {
-      const tool = findTool('get-calendar-view') as Tool;
+      const tool = findTool('calendar-view') as Tool;
       await executeTool(tool, mockGraphClient, {
         startDateTime: '2026-05-22T00:00:00Z',
         endDateTime: '2026-05-29T00:00:00Z',

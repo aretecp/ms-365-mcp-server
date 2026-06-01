@@ -35,7 +35,7 @@ const assertIsDraft: ToolPrecondition = async (
   if (!msg || msg.isDraft !== true) {
     throw new Error(
       `message '${id}' is not a draft (isDraft=${String(msg?.isDraft)}). ` +
-        'This tool refuses to modify non-draft mail. Create a fresh draft with create-draft-email instead, or have the human action the message in Outlook.'
+        'This tool refuses to modify non-draft mail. Create a fresh draft with mail-draft-create instead, or have the human action the message in Outlook.'
     );
   }
 };
@@ -50,7 +50,7 @@ const MAIL_SEARCH_TIP =
   'Reference: https://learn.microsoft.com/en-us/graph/search-query-parameter ' +
   'IMPORTANT: Always use $select to limit returned fields and reduce response size. Recommended default: ' +
   '$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead,hasAttachments. ' +
-  'Use bodyPreview instead of body for listings. To read the full email body, use get-mail-message with the specific message id.';
+  'Use bodyPreview instead of body for listings. To read the full email body, use mail-message-get with the specific message id.';
 
 /**
  * Outlook recipient: `{ emailAddress: { address, name? } }`. Reused by both
@@ -77,8 +77,8 @@ const itemBodySchema = z
   .passthrough();
 
 /**
- * Mutable Message resource. Used as the body shape for create-draft-email
- * and (in partial form) update-mail-message. Field set kept narrow and
+ * Mutable Message resource. Used as the body shape for mail-draft-create
+ * and (in partial form) mail-message-update. Field set kept narrow and
  * commonly-needed; `.passthrough()` allows the LLM to send extras Graph
  * supports without a schema-update round-trip.
  */
@@ -127,12 +127,29 @@ const attachmentWriteSchema = z
 
 export const mailTools: readonly Tool[] = [
   {
-    name: 'list-mail-messages',
-    description: "List the signed-in user's mail messages.",
+    name: 'mail-message-list',
+    description:
+      "List the signed-in user's mail messages. Pass folder-id to scope to one folder (discover ids with mail-folder-list); omit to list across the whole mailbox.",
     method: 'GET',
     path: '/me/messages',
     scopes: ['Mail.Read'],
+    projection: 'mail',
+    resolverParams: ['folder-id'],
+    pathResolver: (p) =>
+      typeof p['folder-id'] === 'string' && p['folder-id'].length > 0
+        ? `/me/mailFolders/${encodeURIComponent(p['folder-id'])}/messages`
+        : '/me/messages',
     params: [
+      {
+        name: 'folder-id',
+        location: 'query',
+        schema: z
+          .string()
+          .describe(
+            'Optional mail folder id (from mail-folder-list). Omit to list across all folders.'
+          )
+          .optional(),
+      },
       OData.filter,
       OData.search,
       OData.select,
@@ -145,7 +162,7 @@ export const mailTools: readonly Tool[] = [
     llmTip: MAIL_SEARCH_TIP,
   },
   {
-    name: 'get-mail-message',
+    name: 'mail-message-get',
     description: 'Get a mail message by id, including the full body.',
     method: 'GET',
     path: '/me/messages/{message-id}',
@@ -161,7 +178,7 @@ export const mailTools: readonly Tool[] = [
     ],
   },
   {
-    name: 'list-mail-folders',
+    name: 'mail-folder-list',
     description: "List the signed-in user's top-level mail folders.",
     method: 'GET',
     path: '/me/mailFolders',
@@ -169,30 +186,7 @@ export const mailTools: readonly Tool[] = [
     params: [OData.filter, OData.select, OData.orderby, OData.top, OData.skip, OData.count],
   },
   {
-    name: 'list-mail-folder-messages',
-    description: 'List messages inside a specific mail folder.',
-    method: 'GET',
-    path: '/me/mailFolders/{mailFolder-id}/messages',
-    scopes: ['Mail.Read'],
-    params: [
-      {
-        name: 'mailFolder-id',
-        location: 'path',
-        schema: z.string().describe('Mail folder id (use list-mail-folders to discover)'),
-      },
-      OData.filter,
-      OData.search,
-      OData.select,
-      OData.orderby,
-      OData.top,
-      OData.skip,
-      OData.count,
-      OData.expand,
-    ],
-    llmTip: MAIL_SEARCH_TIP,
-  },
-  {
-    name: 'list-mail-attachments',
+    name: 'mail-attachment-list',
     description:
       'List attachments on a mail message. Use download-bytes with the attachment $value path to fetch bytes.',
     method: 'GET',
@@ -213,7 +207,7 @@ export const mailTools: readonly Tool[] = [
   // ---------- Write tools (PR 4) ----------
 
   {
-    name: 'create-draft-email',
+    name: 'mail-draft-create',
     description:
       "Create a draft email in the signed-in user's Drafts folder. Returns the new message including its id. The draft sits in Drafts until the human opens Outlook and clicks Send — this server has no send capability (see docs/DEPLOYMENT.md §3 on the deliberate Mail.Send exclusion).",
     method: 'POST',
@@ -227,12 +221,12 @@ export const mailTools: readonly Tool[] = [
       },
     ],
     llmTip:
-      'Resolve recipient addresses with list-users (or a known contact) before drafting; do not invent SMTP addresses. ' +
+      'Resolve recipient addresses with user-search (or a known contact) before drafting; do not invent SMTP addresses. ' +
       'For HTML bodies set body.contentType to "html"; otherwise "text". ' +
       'After creating the draft, tell the human it is waiting in their Drafts folder for review — the model cannot send it.',
   },
   {
-    name: 'update-mail-message',
+    name: 'mail-message-update',
     description:
       'Update fields on a draft mail message by id. Any field omitted is left unchanged. The server refuses this call if the message is not a draft (isDraft=true) — non-drafts must be actioned by the human in Outlook.',
     method: 'PATCH',
@@ -253,7 +247,7 @@ export const mailTools: readonly Tool[] = [
     ],
   },
   {
-    name: 'add-mail-attachment',
+    name: 'mail-attachment-add',
     description:
       'Add an attachment to a draft message. For files under 3 MB pass base64 in contentBytes; for larger files use Graph upload sessions (not exposed in v1). The server refuses this call if the message is not a draft.',
     method: 'POST',
@@ -274,7 +268,7 @@ export const mailTools: readonly Tool[] = [
     ],
   },
   {
-    name: 'delete-mail-message',
+    name: 'mail-message-delete',
     description:
       'Move a draft mail message to Deleted Items by id. The server refuses this call if the message is not a draft — received and sent mail must be actioned by the human in Outlook (the LLM cannot mass-delete an inbox via this tool).',
     method: 'DELETE',

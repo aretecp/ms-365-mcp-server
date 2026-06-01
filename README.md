@@ -13,7 +13,7 @@ Hand-written tool surface. Currently exposing:
 - **Files (OneDrive)**: read-only.
 - **SharePoint**: sites, document libraries, lists — read-only.
 - **Teams**: chats, channels (read + send), online meetings (find + create + update + delete), transcripts (read).
-- **Directory**: `get-me`, `list-users`, `get-user`.
+- **Directory**: `identity-get-me`, `user-search`, `user-get`.
 - **Utilities**: `download-bytes`, `parse-teams-url`.
 
 Per-user OAuth sessions in SQLite. Per-user, per-tool policy in YAML with admin UI + SIGHUP reload. HTTP transport only.
@@ -78,17 +78,17 @@ Current preconditions:
 
 | Tool                    | Invariant                             | Implementation                                                                           |
 | ----------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `update-mail-message`   | message must satisfy `isDraft=true`   | `assertIsDraft` — GET `/me/messages/{id}?$select=isDraft`, refuse if not a draft         |
-| `add-mail-attachment`   | message must satisfy `isDraft=true`   | same                                                                                     |
-| `delete-mail-message`   | message must satisfy `isDraft=true`   | same — model cannot mass-delete received mail                                            |
-| `update-calendar-event` | event must satisfy `isOrganizer=true` | `assertIsOrganizer` — GET `/me/events/{id}?$select=isOrganizer`, refuse if not organizer |
-| `delete-calendar-event` | event must satisfy `isOrganizer=true` | same                                                                                     |
+| `mail-message-update`   | message must satisfy `isDraft=true`   | `assertIsDraft` — GET `/me/messages/{id}?$select=isDraft`, refuse if not a draft         |
+| `mail-attachment-add`   | message must satisfy `isDraft=true`   | same                                                                                     |
+| `mail-message-delete`   | message must satisfy `isDraft=true`   | same — model cannot mass-delete received mail                                            |
+| `calendar-event-update` | event must satisfy `isOrganizer=true` | `assertIsOrganizer` — GET `/me/events/{id}?$select=isOrganizer`, refuse if not organizer |
+| `calendar-event-delete` | event must satisfy `isOrganizer=true` | same                                                                                     |
 
 `Mail.ReadWrite` at the Graph layer is broader than what we want to expose. Without `assertIsDraft`, the LLM could PATCH any message (mark as read, flag, recategorize), DELETE any message (clear an inbox), or attach files to received mail. The precondition closes that gap.
 
 `Calendars.ReadWrite` has the same shape: it covers any event the signed-in user is an attendee of, not just events they organize. Without `assertIsOrganizer`, the LLM could PATCH an attendee-side event (silently mutating the user's local copy) or DELETE one (which Graph interprets as declining the invite). The precondition restricts both write paths to organizer-owned events; accepted/declined invites must be managed by the human in Outlook.
 
-The full surface audit ran in [issue #11](https://github.com/aretecp/ms-365-mcp-server/issues/11) and lives in [`docs/SECURITY-AUDIT.md`](docs/SECURITY-AUDIT.md). Remaining preconditions identified by the audit are tracked in [issue #12](https://github.com/aretecp/ms-365-mcp-server/issues/12) (`assertChatIsPostable` for `send-chat-message`) and [issue #13](https://github.com/aretecp/ms-365-mcp-server/issues/13) (`assertChannelIsStandardAndInternal` for `send-channel-message` + `send-channel-message-reply`). Online-meeting writes and event/draft creation tools are closed by Graph natural scoping — no precondition needed.
+The full surface audit ran in [issue #11](https://github.com/aretecp/ms-365-mcp-server/issues/11) and lives in [`docs/SECURITY-AUDIT.md`](docs/SECURITY-AUDIT.md). Remaining preconditions identified by the audit are tracked in [issue #12](https://github.com/aretecp/ms-365-mcp-server/issues/12) (`assertChatIsPostable` for `teams-chat-message-send`) and [issue #13](https://github.com/aretecp/ms-365-mcp-server/issues/13) (`assertChannelIsStandardAndInternal` for `teams-channel-message-send` + `teams-channel-message-reply-send`). Online-meeting writes and event/draft creation tools are closed by Graph natural scoping — no precondition needed.
 
 ## Production deployment
 

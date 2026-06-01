@@ -1,10 +1,18 @@
 import { z } from 'zod';
 import type GraphClient from '../graph-client.js';
+import type { ResourceKind } from './projections.js';
 
 /**
  * Where a {@link ToolParam} value goes in the outbound Graph request.
  */
 export type ParamLocation = 'path' | 'query' | 'header' | 'body';
+
+/**
+ * Domain group a tool belongs to, for static (deployment-time) progressive
+ * disclosure. A curated cross-domain "core" set always registers; the rest of
+ * each domain is gated behind enabling that toolset (see `toolset-config.ts`).
+ */
+export type Toolset = 'mail' | 'calendar' | 'files' | 'directory' | 'teams' | 'sharepoint';
 
 /**
  * Server-side guard invoked before a tool's main Graph call. Throw to refuse
@@ -69,6 +77,14 @@ export interface Tool {
    * etc. — anything that helps the model use the tool correctly.
    */
   llmTip?: string;
+  /**
+   * Resource kind for default field projection. Set on read/list tools so the
+   * runtime injects a `Minimal*` `$select` when the caller omits one (and did
+   * not pass `response_format: 'detailed'`). See {@link ResourceKind} /
+   * `projections.ts`. Omit on tools that should return their full payload by
+   * default (e.g. a by-id "get the full body" read).
+   */
+  projection?: ResourceKind;
   /** Calendar tools: adds the `timezone` MCP param mapping to Prefer header. */
   supportsTimezone?: boolean;
   /** Calendar tools: adds the `expandExtendedProperties` MCP param. */
@@ -105,6 +121,25 @@ export interface Tool {
    * any message id.
    */
   precondition?: ToolPrecondition;
+  /**
+   * Optional per-tool path builder. When present, the runtime uses its return
+   * value as the Graph path instead of the static {@link Tool.path} template —
+   * letting one tool select between path shapes by the presence of an id (e.g.
+   * a list tool that targets `/me/messages` or `/me/mailFolders/{id}/messages`).
+   *
+   * It MUST return a fully-substituted path (no `{placeholder}` left). The param
+   * names it consumes are declared in {@link Tool.resolverParams} so the runtime
+   * skips them in the param loop and they never leak onto the query string.
+   */
+  pathResolver?: (params: Record<string, unknown>) => string;
+  /** Param names consumed by {@link Tool.pathResolver}; skipped in the param loop. */
+  resolverParams?: string[];
+  /**
+   * Domain group for static progressive disclosure. Usually assigned per-domain
+   * in `tools/index.ts`; a tool may override. Tools in the curated core set
+   * (`toolset-config.ts`) register regardless of this tag.
+   */
+  toolset?: Toolset;
 }
 
 /**

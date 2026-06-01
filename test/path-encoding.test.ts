@@ -23,8 +23,8 @@ describe('Path parameter encoding (issue #245)', () => {
     mockGraphClient = { graphRequest } as unknown as GraphClient;
   });
 
-  const getMailMessage = ALL_TOOLS.find((t) => t.name === 'get-mail-message') as Tool;
-  const getCalendarEvent = ALL_TOOLS.find((t) => t.name === 'get-calendar-event') as Tool;
+  const getMailMessage = ALL_TOOLS.find((t) => t.name === 'mail-message-get') as Tool;
+  const getCalendarEvent = ALL_TOOLS.find((t) => t.name === 'calendar-event-get') as Tool;
 
   it('preserves = in base64-encoded message IDs', async () => {
     const base64Id =

@@ -24,52 +24,47 @@
 defaults:
   allow:
     # Mail (read)
-    - list-mail-messages
-    - get-mail-message
-    - list-mail-folders
-    - list-mail-folder-messages
-    - list-mail-attachments
+    - mail-message-list
+    - mail-message-get
+    - mail-folder-list
+    - mail-attachment-list
 
     # Calendar (read)
-    - list-calendar-events
-    - get-calendar-event
-    - get-calendar-view
+    - calendar-event-get
+    - calendar-view
 
     # Files / OneDrive (read)
-    - get-drive-root-item
-    - list-folder-files
-    - get-drive-item
+    - drive-children-list
+    - drive-item-get
 
     # Identity
-    - get-me
+    - identity-get-me
 
     # Users (directory lookup)
-    - list-users
-    - get-user
+    - user-search
+    - user-get
 
     # SharePoint (read)
-    - list-sites
-    - get-site
-    - list-site-drives
-    - list-drive-root-children
-    - list-drive-folder-children
-    - get-drive-item-by-id
-    - list-site-lists
-    - list-site-list-items
+    - sharepoint-site-list
+    - sharepoint-site-get
+    - sharepoint-drive-list
+    - sharepoint-drive-children-list
+    - sharepoint-drive-item-get
+    - sharepoint-list-list
+    - sharepoint-list-item-list
 
     # Teams (read)
-    - list-chats
-    - get-chat
-    - list-chat-messages
-    - get-chat-message
-    - list-joined-teams
-    - list-team-channels
-    - list-channel-messages
-    - get-channel-message
-    - list-channel-message-replies
-    - find-online-meeting
-    - get-online-meeting
-    - list-meeting-transcripts
+    - teams-chat-list
+    - teams-chat-get
+    - teams-chat-message-list
+    - teams-chat-message-get
+    - teams-joined-list
+    - teams-channel-list
+    - teams-channel-message-list
+    - teams-channel-message-get
+    - teams-channel-message-reply-list
+    - teams-online-meeting-find
+    - teams-meeting-transcript-list
 
     # Utilities
     - download-bytes
@@ -82,21 +77,21 @@ defaults:
 #     allow:
 #       # Mail drafts (no send — human reviews + sends from Outlook).
 #       # See README "Why no Mail.Send".
-#       - create-draft-email
-#       - update-mail-message
-#       - add-mail-attachment
-#       - delete-mail-message
+#       - mail-draft-create
+#       - mail-message-update
+#       - mail-attachment-add
+#       - mail-message-delete
 #       # Calendar writes
-#       - create-calendar-event
-#       - update-calendar-event
-#       - delete-calendar-event
+#       - calendar-event-create
+#       - calendar-event-update
+#       - calendar-event-delete
 #       # Teams writes
-#       - send-chat-message
-#       - send-channel-message
-#       - send-channel-message-reply
-#       - create-online-meeting
-#       - update-online-meeting
-#       - delete-online-meeting
+#       - teams-chat-message-send
+#       - teams-channel-message-send
+#       - teams-channel-message-reply-send
+#       - teams-online-meeting-create
+#       - teams-online-meeting-update
+#       - teams-online-meeting-delete
 #
 #   readonly-bot@areteintelligence.com:
 #     deny:

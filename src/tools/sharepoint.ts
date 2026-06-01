@@ -2,20 +2,20 @@ import { z } from 'zod';
 import { OData, type Tool } from './types.js';
 
 const SITE_ID_HINT =
-  'Site id is either the GUID returned by list-sites or the path form ' +
-  '"<hostname>,<siteCollectionId>,<webId>" Graph documents. Use list-sites to discover it.';
+  'Site id is either the GUID returned by sharepoint-site-list or the path form ' +
+  '"<hostname>,<siteCollectionId>,<webId>" Graph documents. Use sharepoint-site-list to discover it.';
 
 const DRIVE_LISTING_TIP =
   "To fetch a file's bytes, use download-bytes with target " +
-  '`/drives/{drive-id}/items/{item-id}/content`. The /me/drive tools (get-drive-root-item, ' +
-  'list-folder-files, get-drive-item) cover OneDrive; these *-by-id variants cover SharePoint ' +
-  'document libraries and any other drive you have access to.';
+  '`/drives/{drive-id}/items/{item-id}/content`. The OneDrive tools (drive-children-list, ' +
+  'drive-item-get) cover the signed-in user\'s OneDrive; these sharepoint-drive-* tools cover ' +
+  'SharePoint document libraries and any other drive you have access to.';
 
 export const sharepointTools: readonly Tool[] = [
   // ---------- Sites ----------
 
   {
-    name: 'list-sites',
+    name: 'sharepoint-site-list',
     description:
       'Search SharePoint sites in the tenant. Always pass a search query — Graph returns nearly nothing without one.',
     method: 'GET',
@@ -42,7 +42,7 @@ export const sharepointTools: readonly Tool[] = [
       'Use $select=id,name,displayName,webUrl to keep responses small.',
   },
   {
-    name: 'get-site',
+    name: 'sharepoint-site-get',
     description: 'Get a single SharePoint site by id.',
     method: 'GET',
     path: '/sites/{site-id}',
@@ -61,7 +61,7 @@ export const sharepointTools: readonly Tool[] = [
   // ---------- Drives in a site ----------
 
   {
-    name: 'list-site-drives',
+    name: 'sharepoint-drive-list',
     description:
       'List the document libraries (drives) inside a SharePoint site. A site can have multiple drives — most commonly "Documents" plus any custom libraries.',
     method: 'GET',
@@ -82,35 +82,29 @@ export const sharepointTools: readonly Tool[] = [
   // ---------- Drive contents (any drive by id) ----------
 
   {
-    name: 'list-drive-root-children',
+    name: 'sharepoint-drive-children-list',
     description:
-      "List the items (files and folders) at the root of a drive by drive-id. Use this for any drive — SharePoint document library or a user's OneDrive — once you have the drive-id from list-site-drives.",
+      "List items (files and folders) in a SharePoint document library or any drive by drive-id (from sharepoint-drive-list). Omit driveItem-id for the drive root; pass a folder driveItem-id to list inside it. For the signed-in user's OneDrive, use drive-children-list instead.",
     method: 'GET',
     path: '/drives/{drive-id}/root/children',
     scopes: ['Sites.Read.All'],
+    projection: 'driveItem',
+    resolverParams: ['drive-id', 'driveItem-id'],
+    pathResolver: (p) => {
+      const drive = encodeURIComponent(String(p['drive-id'] ?? ''));
+      return typeof p['driveItem-id'] === 'string' && p['driveItem-id'].length > 0
+        ? `/drives/${drive}/items/${encodeURIComponent(p['driveItem-id'])}/children`
+        : `/drives/${drive}/root/children`;
+    },
     params: [
-      { name: 'drive-id', location: 'path', schema: z.string().describe('Drive id') },
-      OData.filter,
-      OData.select,
-      OData.orderby,
-      OData.top,
-      OData.skip,
-    ],
-    llmTip: DRIVE_LISTING_TIP,
-  },
-  {
-    name: 'list-drive-folder-children',
-    description:
-      'List the items inside a folder in a specific drive, addressed by drive-id + folder item-id.',
-    method: 'GET',
-    path: '/drives/{drive-id}/items/{driveItem-id}/children',
-    scopes: ['Sites.Read.All'],
-    params: [
-      { name: 'drive-id', location: 'path', schema: z.string().describe('Drive id') },
+      { name: 'drive-id', location: 'query', schema: z.string().min(1).describe('Drive id (from sharepoint-drive-list)') },
       {
         name: 'driveItem-id',
-        location: 'path',
-        schema: z.string().describe('Folder item id within the drive'),
+        location: 'query',
+        schema: z
+          .string()
+          .describe('Optional folder item id within the drive. Omit for the drive root.')
+          .optional(),
       },
       OData.filter,
       OData.select,
@@ -121,18 +115,29 @@ export const sharepointTools: readonly Tool[] = [
     llmTip: DRIVE_LISTING_TIP,
   },
   {
-    name: 'get-drive-item-by-id',
+    name: 'sharepoint-drive-item-get',
     description:
-      'Get metadata for a single item (file or folder) in any drive, addressed by drive-id + item-id.',
+      'Get metadata for a single item (file or folder) in a SharePoint document library or any drive by drive-id. Omit driveItem-id for the drive root item; pass a driveItem-id for a specific item.',
     method: 'GET',
-    path: '/drives/{drive-id}/items/{driveItem-id}',
+    path: '/drives/{drive-id}/root',
     scopes: ['Sites.Read.All'],
+    projection: 'driveItem',
+    resolverParams: ['drive-id', 'driveItem-id'],
+    pathResolver: (p) => {
+      const drive = encodeURIComponent(String(p['drive-id'] ?? ''));
+      return typeof p['driveItem-id'] === 'string' && p['driveItem-id'].length > 0
+        ? `/drives/${drive}/items/${encodeURIComponent(p['driveItem-id'])}`
+        : `/drives/${drive}/root`;
+    },
     params: [
-      { name: 'drive-id', location: 'path', schema: z.string().describe('Drive id') },
+      { name: 'drive-id', location: 'query', schema: z.string().min(1).describe('Drive id (from sharepoint-drive-list)') },
       {
         name: 'driveItem-id',
-        location: 'path',
-        schema: z.string().describe('Item id within the drive'),
+        location: 'query',
+        schema: z
+          .string()
+          .describe('Optional item id within the drive. Omit for the drive root item.')
+          .optional(),
       },
       OData.select,
       OData.expand,
@@ -142,7 +147,7 @@ export const sharepointTools: readonly Tool[] = [
   // ---------- Lists in a site ----------
 
   {
-    name: 'list-site-lists',
+    name: 'sharepoint-list-list',
     description:
       'List the SharePoint lists in a site. Lists are structured-data tables (distinct from document libraries, which are file storage).',
     method: 'GET',
@@ -161,7 +166,7 @@ export const sharepointTools: readonly Tool[] = [
     ],
   },
   {
-    name: 'list-site-list-items',
+    name: 'sharepoint-list-item-list',
     description:
       'List rows in a SharePoint list. Always returns items with their column values expanded ($expand=fields) — list items are nearly useless without their fields.',
     method: 'GET',
@@ -193,7 +198,7 @@ export const sharepointTools: readonly Tool[] = [
       },
     ],
     llmTip:
-      'list-site-list-items defaults to $expand=fields so each row carries its column values. ' +
+      'sharepoint-list-item-list defaults to $expand=fields so each row carries its column values. ' +
       'For wide lists, set $expand=fields($select=Title,Status,...) to scope which columns come back.',
   },
 ];

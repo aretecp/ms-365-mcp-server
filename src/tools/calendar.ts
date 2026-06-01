@@ -8,7 +8,7 @@ import { OData, type Tool, type ToolPrecondition } from './types.js';
  * user is an attendee of at the Graph layer — this guard narrows write
  * capability to organizer-owned events. Mutating an attendee-side copy via
  * PATCH/DELETE would silently change the user's local copy (or decline the
- * invite); neither is what update-calendar-event / delete-calendar-event
+ * invite); neither is what calendar-event-update / calendar-event-delete
  * describe.
  *
  * Performs a tiny GET with $select=isOrganizer to avoid pulling the whole
@@ -93,7 +93,7 @@ const eventBodySchema = z
 
 /**
  * Mutable Event resource. Required-on-create fields (subject, start, end) are
- * documented but not enforced because update-calendar-event uses the same
+ * documented but not enforced because calendar-event-update uses the same
  * schema for partial updates. Graph validates server-side either way.
  */
 const eventWriteSchema = z
@@ -123,27 +123,7 @@ const eventWriteSchema = z
 
 export const calendarTools: readonly Tool[] = [
   {
-    name: 'list-calendar-events',
-    description:
-      "List the signed-in user's calendar events (not expanded; recurring events show as the series master). For an expanded window over a date range, use get-calendar-view instead.",
-    method: 'GET',
-    path: '/me/events',
-    scopes: ['Calendars.Read'],
-    supportsTimezone: true,
-    supportsExpandExtendedProperties: true,
-    params: [
-      OData.filter,
-      OData.search,
-      OData.select,
-      OData.orderby,
-      OData.top,
-      OData.skip,
-      OData.count,
-      OData.expand,
-    ],
-  },
-  {
-    name: 'get-calendar-event',
+    name: 'calendar-event-get',
     description: 'Get a single calendar event by id.',
     method: 'GET',
     path: '/me/events/{event-id}',
@@ -161,12 +141,13 @@ export const calendarTools: readonly Tool[] = [
     ],
   },
   {
-    name: 'get-calendar-view',
+    name: 'calendar-view',
     description:
       "Expanded calendar view between two times. Recurring events are expanded into individual occurrences over the window — usually what an LLM actually wants when asked 'what's on the calendar this week'.",
     method: 'GET',
     path: '/me/calendarView',
     scopes: ['Calendars.Read'],
+    projection: 'event',
     supportsTimezone: true,
     supportsExpandExtendedProperties: true,
     params: [
@@ -192,7 +173,7 @@ export const calendarTools: readonly Tool[] = [
   // ---------- Write tools (PR 4) ----------
 
   {
-    name: 'create-calendar-event',
+    name: 'calendar-event-create',
     description:
       "Create a calendar event on the signed-in user's default calendar. Returns the created event including its id. Requires subject, start, and end at minimum.",
     method: 'POST',
@@ -206,13 +187,13 @@ export const calendarTools: readonly Tool[] = [
       },
     ],
     llmTip:
-      'Resolve attendee SMTP addresses with list-users (or known contacts) before creating; do not invent addresses. ' +
+      'Resolve attendee SMTP addresses with user-search (or known contacts) before creating; do not invent addresses. ' +
       'Set start.timeZone and end.timeZone explicitly — Graph defaults to UTC if you omit them, which is rarely what users want.',
   },
   {
-    name: 'update-calendar-event',
+    name: 'calendar-event-update',
     description:
-      'Update fields on an existing calendar event by id. Any field omitted is left unchanged. Use get-calendar-event first if you need to read the current values before mutating. The server refuses this call if the signed-in user is not the organizer (isOrganizer=true) — accepted/declined invites must be managed by the human in Outlook.',
+      'Update fields on an existing calendar event by id. Any field omitted is left unchanged. Use calendar-event-get first if you need to read the current values before mutating. The server refuses this call if the signed-in user is not the organizer (isOrganizer=true) — accepted/declined invites must be managed by the human in Outlook.',
     method: 'PATCH',
     path: '/me/events/{event-id}',
     scopes: ['Calendars.ReadWrite'],
@@ -231,9 +212,9 @@ export const calendarTools: readonly Tool[] = [
     ],
   },
   {
-    name: 'delete-calendar-event',
+    name: 'calendar-event-delete',
     description:
-      'Delete a calendar event by id. For organizers of recurring events this deletes the whole series — use update-calendar-event with a cancel-style change if a single occurrence is intended. The server refuses this call if the signed-in user is not the organizer (isOrganizer=true) — the LLM cannot decline invites or mass-clear the calendar through this tool.',
+      'Delete a calendar event by id. For organizers of recurring events this deletes the whole series — use calendar-event-update with a cancel-style change if a single occurrence is intended. The server refuses this call if the signed-in user is not the organizer (isOrganizer=true) — the LLM cannot decline invites or mass-clear the calendar through this tool.',
     method: 'DELETE',
     path: '/me/events/{event-id}',
     scopes: ['Calendars.ReadWrite'],

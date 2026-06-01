@@ -105,7 +105,7 @@ describe('admin policy editor', () => {
   });
 
   it('GET /admin/policy renders the current YAML and a CSRF token', async () => {
-    harness = buildHarness('defaults:\n  allow:\n    - get-me\n');
+    harness = buildHarness('defaults:\n  allow:\n    - identity-get-me\n');
     const res = await request(harness.app)
       .get('/admin/policy')
       .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`);
@@ -116,8 +116,8 @@ describe('admin policy editor', () => {
   });
 
   it('POST /admin/policy writes the new YAML, reloads, and redirects with ?saved=1', async () => {
-    harness = buildHarness('defaults:\n  allow:\n    - get-me\n');
-    const newYaml = 'defaults:\n  allow:\n    - get-me\n    - list-mail-messages\n';
+    harness = buildHarness('defaults:\n  allow:\n    - identity-get-me\n');
+    const newYaml = 'defaults:\n  allow:\n    - identity-get-me\n    - mail-message-list\n';
     const res = await request(harness.app)
       .post('/admin/policy')
       .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`)
@@ -133,13 +133,13 @@ describe('admin policy editor', () => {
     expect(
       harness.policyManager.check({
         userPrincipalName: 'anyone@example.com',
-        toolName: 'list-mail-messages',
+        toolName: 'mail-message-list',
       })
     ).toBe(true);
   });
 
   it('POST /admin/policy with invalid YAML re-renders with an error and leaves the file untouched', async () => {
-    const originalYaml = 'defaults:\n  allow:\n    - get-me\n';
+    const originalYaml = 'defaults:\n  allow:\n    - identity-get-me\n';
     harness = buildHarness(originalYaml);
     const res = await request(harness.app)
       .post('/admin/policy')
@@ -152,19 +152,19 @@ describe('admin policy editor', () => {
   });
 
   it('POST /admin/policy with mismatched CSRF returns 403', async () => {
-    const originalYaml = 'defaults:\n  allow:\n    - get-me\n';
+    const originalYaml = 'defaults:\n  allow:\n    - identity-get-me\n';
     harness = buildHarness(originalYaml);
     const res = await request(harness.app)
       .post('/admin/policy')
       .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`)
       .type('form')
-      .send({ csrf_token: 'wrong-token', yaml: 'defaults: { allow: [get-me] }' });
+      .send({ csrf_token: 'wrong-token', yaml: 'defaults: { allow: [identity-get-me] }' });
     expect(res.status).toBe(403);
     expect(fs.readFileSync(harness.policyFile, 'utf8')).toBe(originalYaml);
   });
 
   it('GET /admin/policy as a non-admin UPN returns 403', async () => {
-    harness = buildHarness('defaults:\n  allow:\n    - get-me\n', { admin: false });
+    harness = buildHarness('defaults:\n  allow:\n    - identity-get-me\n', { admin: false });
     const res = await request(harness.app)
       .get('/admin/policy')
       .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`);
@@ -172,7 +172,7 @@ describe('admin policy editor', () => {
   });
 
   it('GET /admin/policy without a cookie returns 401', async () => {
-    harness = buildHarness('defaults:\n  allow:\n    - get-me\n');
+    harness = buildHarness('defaults:\n  allow:\n    - identity-get-me\n');
     const res = await request(harness.app).get('/admin/policy');
     expect(res.status).toBe(401);
   });
@@ -180,7 +180,7 @@ describe('admin policy editor', () => {
   it('Policy.fromDocument validation runs on the submitted YAML before write', async () => {
     // A YAML that is structurally a mapping but with a non-mapping top level
     // should fail validation. (Empty doc + array is the easiest to construct.)
-    const originalYaml = 'defaults:\n  allow:\n    - get-me\n';
+    const originalYaml = 'defaults:\n  allow:\n    - identity-get-me\n';
     harness = buildHarness(originalYaml);
     const res = await request(harness.app)
       .post('/admin/policy')

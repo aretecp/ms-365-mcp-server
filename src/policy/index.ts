@@ -55,6 +55,8 @@ export interface PolicyDocument {
  */
 export interface PolicyChecker {
   check(args: { userPrincipalName: string | null; toolName: string }): boolean;
+  /** Optional structured view of the policy (Policy/PolicyManager implement it). */
+  summary?(): PolicySummary;
 }
 
 const POLICY_PATH_ENV = 'MS365_MCP_POLICY_PATH';

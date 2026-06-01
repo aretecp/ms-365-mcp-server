@@ -14,13 +14,13 @@ const findTool = (name: string) => ALL_TOOLS.find((t) => t.name === name) as Too
 
 describe('write-tool registration', () => {
   const writeNames = [
-    'create-draft-email',
-    'update-mail-message',
-    'add-mail-attachment',
-    'delete-mail-message',
-    'create-calendar-event',
-    'update-calendar-event',
-    'delete-calendar-event',
+    'mail-draft-create',
+    'mail-message-update',
+    'mail-attachment-add',
+    'mail-message-delete',
+    'calendar-event-create',
+    'calendar-event-update',
+    'calendar-event-delete',
   ];
 
   it('every PR 4 write tool is in ALL_TOOLS', () => {
@@ -47,7 +47,7 @@ describe('write-tool registration', () => {
       }),
     };
     const graphClient = { graphRequest: vi.fn() } as unknown as GraphClient;
-    registerTools(mockServer as never, graphClient);
+    registerTools(mockServer as never, graphClient, { toolsets: 'all' });
 
     for (const name of writeNames) {
       const call = calls.find((c) => c[0] === name);
@@ -63,7 +63,7 @@ describe('write-tool runtime', () => {
   let mockGraphClient: GraphClient;
   let graphRequest: ReturnType<typeof vi.fn>;
 
-  // Mail write tools (other than create-draft-email) carry an isDraft
+  // Mail write tools (other than mail-draft-create) carry an isDraft
   // precondition; calendar update/delete tools carry an isOrganizer
   // precondition. The runtime issues a GET ?$select=<prop> before the main
   // call; default the mock to "yes it's a draft" / "yes you're the organizer"
@@ -89,8 +89,8 @@ describe('write-tool runtime', () => {
       ([p]: [string]) => !p.includes('$select=isDraft') && !p.includes('$select=isOrganizer')
     ) as [string, { method: string; body?: string }] | undefined;
 
-  it('create-draft-email POSTs a JSON body to /me/messages', async () => {
-    const tool = findTool('create-draft-email');
+  it('mail-draft-create POSTs a JSON body to /me/messages', async () => {
+    const tool = findTool('mail-draft-create');
     await executeTool(tool, mockGraphClient, {
       body: {
         subject: 'Hello',
@@ -99,7 +99,7 @@ describe('write-tool runtime', () => {
       },
     });
 
-    // create-draft-email has no precondition — only one call.
+    // mail-draft-create has no precondition — only one call.
     expect(graphRequest.mock.calls).toHaveLength(1);
     const call = mainCall()!;
     expect(call[0]).toBe('/me/messages');
@@ -109,8 +109,8 @@ describe('write-tool runtime', () => {
     expect(parsed.toRecipients[0].emailAddress.address).toBe('to@example.com');
   });
 
-  it('update-mail-message PATCHes the message id after isDraft check passes', async () => {
-    const tool = findTool('update-mail-message');
+  it('mail-message-update PATCHes the message id after isDraft check passes', async () => {
+    const tool = findTool('mail-message-update');
     await executeTool(tool, mockGraphClient, {
       'message-id': 'msg-1',
       body: { isRead: true },
@@ -126,8 +126,8 @@ describe('write-tool runtime', () => {
     expect(JSON.parse(call[1].body!)).toEqual({ isRead: true });
   });
 
-  it('delete-mail-message DELETEs after isDraft check passes', async () => {
-    const tool = findTool('delete-mail-message');
+  it('mail-message-delete DELETEs after isDraft check passes', async () => {
+    const tool = findTool('mail-message-delete');
     await executeTool(tool, mockGraphClient, { 'message-id': 'msg-3' });
 
     expect(graphRequest.mock.calls[0][0]).toBe('/me/messages/msg-3?$select=isDraft');
@@ -139,14 +139,14 @@ describe('write-tool runtime', () => {
   // ---- Precondition: negative cases ----
   // The runtime must refuse non-draft writes regardless of tool description.
 
-  for (const toolName of ['update-mail-message', 'delete-mail-message', 'add-mail-attachment']) {
+  for (const toolName of ['mail-message-update', 'mail-message-delete', 'mail-attachment-add']) {
     it(`${toolName} REFUSES when isDraft=false (received mail) and never fires the main call`, async () => {
       graphRequest = vi.fn().mockResolvedValue({ isDraft: false });
       mockGraphClient = { graphRequest } as unknown as GraphClient;
 
       const params: Record<string, unknown> = { 'message-id': 'received-msg' };
-      if (toolName === 'update-mail-message') params.body = { isRead: true };
-      if (toolName === 'add-mail-attachment') {
+      if (toolName === 'mail-message-update') params.body = { isRead: true };
+      if (toolName === 'mail-attachment-add') {
         params.body = { '@odata.type': '#microsoft.graph.fileAttachment', name: 'x' };
       }
 
@@ -162,11 +162,11 @@ describe('write-tool runtime', () => {
     });
   }
 
-  it('update-mail-message REFUSES when the message does not exist (precondition GET fails)', async () => {
+  it('mail-message-update REFUSES when the message does not exist (precondition GET fails)', async () => {
     graphRequest = vi.fn().mockRejectedValue(new Error('404 Not Found'));
     mockGraphClient = { graphRequest } as unknown as GraphClient;
 
-    const result = await executeTool(findTool('update-mail-message'), mockGraphClient, {
+    const result = await executeTool(findTool('mail-message-update'), mockGraphClient, {
       'message-id': 'gone',
       body: { isRead: true },
     });
@@ -178,8 +178,8 @@ describe('write-tool runtime', () => {
     expect(graphRequest.mock.calls).toHaveLength(1);
   });
 
-  it('create-calendar-event POSTs the event body to /me/events', async () => {
-    const tool = findTool('create-calendar-event');
+  it('calendar-event-create POSTs the event body to /me/events', async () => {
+    const tool = findTool('calendar-event-create');
     await executeTool(tool, mockGraphClient, {
       body: {
         subject: 'Sync',
@@ -188,7 +188,7 @@ describe('write-tool runtime', () => {
       },
     });
 
-    // create-calendar-event has no precondition — only one call.
+    // calendar-event-create has no precondition — only one call.
     expect(graphRequest.mock.calls).toHaveLength(1);
     const call = mainCall()!;
     expect(call[0]).toBe('/me/events');
@@ -198,8 +198,8 @@ describe('write-tool runtime', () => {
     expect(parsed.start.timeZone).toBe('America/New_York');
   });
 
-  it('update-calendar-event PATCHes the event id after isOrganizer check passes', async () => {
-    const tool = findTool('update-calendar-event');
+  it('calendar-event-update PATCHes the event id after isOrganizer check passes', async () => {
+    const tool = findTool('calendar-event-update');
     await executeTool(tool, mockGraphClient, {
       'event-id': 'evt-1',
       body: { subject: 'Renamed' },
@@ -215,8 +215,8 @@ describe('write-tool runtime', () => {
     expect(JSON.parse(call[1].body!)).toEqual({ subject: 'Renamed' });
   });
 
-  it('delete-calendar-event DELETEs after isOrganizer check passes', async () => {
-    const tool = findTool('delete-calendar-event');
+  it('calendar-event-delete DELETEs after isOrganizer check passes', async () => {
+    const tool = findTool('calendar-event-delete');
     await executeTool(tool, mockGraphClient, { 'event-id': 'evt-2' });
 
     expect(graphRequest.mock.calls[0][0]).toBe('/me/events/evt-2?$select=isOrganizer');
@@ -229,13 +229,13 @@ describe('write-tool runtime', () => {
   // Attendee-side events (isOrganizer=false) and nonexistent events must be
   // refused before any PATCH/DELETE fires.
 
-  for (const toolName of ['update-calendar-event', 'delete-calendar-event']) {
+  for (const toolName of ['calendar-event-update', 'calendar-event-delete']) {
     it(`${toolName} REFUSES when isOrganizer=false (attendee event) and never fires the main call`, async () => {
       graphRequest = vi.fn().mockResolvedValue({ isOrganizer: false });
       mockGraphClient = { graphRequest } as unknown as GraphClient;
 
       const params: Record<string, unknown> = { 'event-id': 'invite-evt' };
-      if (toolName === 'update-calendar-event') params.body = { subject: 'nope' };
+      if (toolName === 'calendar-event-update') params.body = { subject: 'nope' };
 
       const result = await executeTool(findTool(toolName), mockGraphClient, params);
 
@@ -253,7 +253,7 @@ describe('write-tool runtime', () => {
       mockGraphClient = { graphRequest } as unknown as GraphClient;
 
       const params: Record<string, unknown> = { 'event-id': 'gone' };
-      if (toolName === 'update-calendar-event') params.body = { subject: 'nope' };
+      if (toolName === 'calendar-event-update') params.body = { subject: 'nope' };
 
       const result = await executeTool(findTool(toolName), mockGraphClient, params);
 
@@ -267,11 +267,11 @@ describe('write-tool runtime', () => {
 });
 
 describe('policy gating on write tools', () => {
-  const writes = ['create-draft-email', 'update-mail-message', 'create-calendar-event'];
+  const writes = ['mail-draft-create', 'mail-message-update', 'calendar-event-create'];
 
   function makePolicy(extra?: Record<string, { allow?: string[]; deny?: string[] }>) {
     return Policy.fromDocument({
-      defaults: { allow: ['get-me'] },
+      defaults: { allow: ['identity-get-me'] },
       users: extra,
     });
   }
@@ -335,7 +335,7 @@ describe('policy gating on write tools', () => {
       },
       () =>
         executeTool(
-          findTool('create-draft-email'),
+          findTool('mail-draft-create'),
           mockGraphClient,
           { body: { subject: 'allowed' } },
           policy
@@ -349,11 +349,11 @@ describe('policy gating on write tools', () => {
 
   it('user.deny wins over user.allow even when defaults would have allowed', async () => {
     const policy = Policy.fromDocument({
-      defaults: { allow: ['delete-mail-message'] },
+      defaults: { allow: ['mail-message-delete'] },
       users: {
         'careful@example.com': {
-          allow: ['delete-mail-message'],
-          deny: ['delete-mail-message'],
+          allow: ['mail-message-delete'],
+          deny: ['mail-message-delete'],
         },
       },
     });
@@ -367,7 +367,7 @@ describe('policy gating on write tools', () => {
         userPrincipalName: 'careful@example.com',
       },
       () =>
-        executeTool(findTool('delete-mail-message'), mockGraphClient, { 'message-id': 'm' }, policy)
+        executeTool(findTool('mail-message-delete'), mockGraphClient, { 'message-id': 'm' }, policy)
     );
     expect(result.isError).toBe(true);
     expect(

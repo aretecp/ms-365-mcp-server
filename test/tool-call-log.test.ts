@@ -12,7 +12,7 @@ function makeEntry(overrides: Partial<ToolCallEntry> = {}): ToolCallEntry {
     id: 'test-id',
     ts: Date.now(),
     upn: 'user@example.com',
-    toolName: 'get-me',
+    toolName: 'identity-get-me',
     status: 'allowed',
     latencyMs: 10,
     argsExcerpt: '{}',
@@ -170,9 +170,9 @@ describe('module-level toolCallLog singleton', () => {
   });
 
   it('records entries and returns them via snapshot()', () => {
-    toolCallLog.record(makeEntry({ toolName: 'get-me' }));
+    toolCallLog.record(makeEntry({ toolName: 'identity-get-me' }));
     const snap = toolCallLog.snapshot();
     expect(snap).toHaveLength(1);
-    expect(snap[0].toolName).toBe('get-me');
+    expect(snap[0].toolName).toBe('identity-get-me');
   });
 });

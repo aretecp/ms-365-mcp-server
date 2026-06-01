@@ -19,4 +19,22 @@ describe('buildMcpServerInstructions', () => {
     expect(s).toContain('Multiple accounts');
     expect(s).toContain('account');
   });
+
+  it('omits Teams guidance by default (core-only session)', () => {
+    const s = buildMcpServerInstructions({ multiAccount: false });
+    expect(s).not.toContain('Teams chat and channel');
+    // core/general guidance is still present
+    expect(s).toContain('Microsoft Graph');
+    expect(s).toContain('KQL');
+  });
+
+  it('includes Teams guidance when the teams toolset is enabled', () => {
+    const s = buildMcpServerInstructions({ multiAccount: false, toolsets: new Set(['teams']) });
+    expect(s).toContain('Teams chat and channel');
+  });
+
+  it("includes Teams guidance when all toolsets are enabled", () => {
+    const s = buildMcpServerInstructions({ multiAccount: false, toolsets: 'all' });
+    expect(s).toContain('Teams chat and channel');
+  });
 });
