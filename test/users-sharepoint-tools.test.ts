@@ -153,6 +153,13 @@ describe('PR 7 runtime — paths and queries', () => {
     expect(opts.method).toBe('GET');
   });
 
+  it('sharepoint-drive-item-get returns the drive root item when driveItem-id is omitted', async () => {
+    await executeTool(findTool('sharepoint-drive-item-get'), mockGraphClient, { 'drive-id': 'd1' });
+    const path = graphRequest.mock.calls[0][0] as string;
+    expect(path).toMatch(/^\/drives\/d1\/root/);
+    expect(path).not.toContain('driveItem-id');
+  });
+
   it('sharepoint-list-item-list threads site-id + list-id and accepts $expand=fields(...)', async () => {
     await executeTool(findTool('sharepoint-list-item-list'), mockGraphClient, {
       'site-id': 'site-1',

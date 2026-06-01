@@ -40,7 +40,7 @@ export const utilityTools: readonly UtilityTool[] = [
     method: 'POST',
     path: 'tool:parse-teams-url',
     description:
-      'Converts any Teams meeting URL format (short /meet/, full /meetup-join/, or recap ?threadId=) into a standard joinWebUrl. Use this before list-online-meetings when the user provides a recap or short URL.',
+      'Converts any Teams meeting URL format (short /meet/, full /meetup-join/, or recap ?threadId=) into a standard joinWebUrl. Use this before teams-online-meeting-find when the user provides a recap or short URL.',
     readOnlyHint: true,
     openWorldHint: false,
     buildSchema: () => ({

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import GraphClient from '../src/graph-client.js';
 import { registerTools, type RegisterToolsOptions } from '../src/tool-runtime.js';
 import { CORE_TOOL_NAMES } from '../src/toolset-config.js';
+import { ALL_TOOLS } from '../src/tools/index.js';
 import { Policy } from '../src/policy/index.js';
 import logger from '../src/logger.js';
 import fs from 'node:fs';
@@ -35,6 +36,13 @@ describe('toolset registration filter', () => {
     expect(names).not.toContain('sharepoint-site-list');
     expect(names).not.toContain('teams-chat-list');
     expect(names).not.toContain('mail-draft-create');
+  });
+
+  it('every CORE_TOOL_NAME is a real tool in ALL_TOOLS (guards rename drift)', () => {
+    const all = new Set(ALL_TOOLS.map((t) => t.name));
+    for (const c of CORE_TOOL_NAMES) {
+      expect(all, `stale core tool name: ${c}`).toContain(c);
+    }
   });
 
   it("enabling a single toolset registers that domain (and leaves others off)", () => {

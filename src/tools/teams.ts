@@ -293,7 +293,7 @@ export const teamsTools: readonly Tool[] = [
   {
     name: 'teams-online-meeting-find',
     description:
-      "Resolve a single online meeting by id OR by joinWebUrl (pass exactly one). Use meeting-id when you already have it; use join-web-url for a user-supplied Teams link (normalize it with parse-teams-url first). Returns the meeting metadata including id. Replaces the old find-online-meeting + get-online-meeting pair.",
+      "Resolve a single online meeting by id OR by joinWebUrl (pass exactly one). Use meeting-id when you already have it; use join-web-url for a user-supplied Teams link (normalize it with parse-teams-url first). Returns the meeting metadata including id.",
     method: 'GET',
     path: '/me/onlineMeetings',
     scopes: ['OnlineMeetings.Read'],
@@ -304,8 +304,11 @@ export const teamsTools: readonly Tool[] = [
       if (typeof id === 'string' && id.length > 0) {
         return `/me/onlineMeetings/${encodeURIComponent(id)}`;
       }
-      const url = String(p['join-web-url'] ?? '');
-      // Build the $filter in code so the model never hand-writes OData.
+      // Double single quotes per OData string-literal escaping so a `'` in the
+      // URL can't break out of the filter (bounded to /me/onlineMeetings, but
+      // still correct to escape). Build the $filter in code so the model never
+      // hand-writes OData.
+      const url = String(p['join-web-url'] ?? '').replace(/'/g, "''");
       return `/me/onlineMeetings?$filter=${encodeURIComponent(`joinWebUrl eq '${url}'`)}`;
     },
     params: [

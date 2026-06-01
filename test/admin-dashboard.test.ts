@@ -151,7 +151,7 @@ describe('GET /admin/dashboard', () => {
   });
 
   it('renders a row for each logged tool call', async () => {
-    toolCallLog.record(makeEntry({ toolName: 'list-mail-messages', status: 'allowed' }));
+    toolCallLog.record(makeEntry({ toolName: 'mail-message-list', status: 'allowed' }));
     toolCallLog.record(makeEntry({ toolName: 'send-mail', status: 'denied_by_policy' }));
 
     harness = buildHarness();
@@ -160,7 +160,7 @@ describe('GET /admin/dashboard', () => {
       .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`);
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('list-mail-messages');
+    expect(res.text).toContain('mail-message-list');
     expect(res.text).toContain('send-mail');
     expect(res.text).toContain('denied by policy');
     expect(res.text).toContain('allowed');

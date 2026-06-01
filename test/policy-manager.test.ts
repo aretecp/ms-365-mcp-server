@@ -41,12 +41,12 @@ describe('PolicyManager', () => {
 
   it('reload() picks up new defaults from disk', async () => {
     const mgr = PolicyManager.fromFile(filePath);
-    expect(mgr.check({ userPrincipalName: null, toolName: 'list-mail-messages' })).toBe(false);
+    expect(mgr.check({ userPrincipalName: null, toolName: 'mail-message-list' })).toBe(false);
 
-    fs.writeFileSync(filePath, 'defaults:\n  allow:\n    - identity-get-me\n    - list-mail-messages\n');
+    fs.writeFileSync(filePath, 'defaults:\n  allow:\n    - identity-get-me\n    - mail-message-list\n');
     await mgr.reload();
 
-    expect(mgr.check({ userPrincipalName: null, toolName: 'list-mail-messages' })).toBe(true);
+    expect(mgr.check({ userPrincipalName: null, toolName: 'mail-message-list' })).toBe(true);
   });
 
   it('reload() keeps the previous policy on a parse error and rejects', async () => {

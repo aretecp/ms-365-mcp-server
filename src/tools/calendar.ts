@@ -143,7 +143,7 @@ export const calendarTools: readonly Tool[] = [
   {
     name: 'calendar-view',
     description:
-      "Expanded calendar view between two times. Recurring events are expanded into individual occurrences over the window — usually what an LLM actually wants when asked 'what's on the calendar this week'. (This supersedes the old unexpanded list-calendar-events.)",
+      "Expanded calendar view between two times. Recurring events are expanded into individual occurrences over the window — usually what an LLM actually wants when asked 'what's on the calendar this week'.",
     method: 'GET',
     path: '/me/calendarView',
     scopes: ['Calendars.Read'],

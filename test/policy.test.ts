@@ -5,9 +5,9 @@ import type { PolicySummary } from '../src/policy/index.js';
 describe('Policy.check', () => {
   it('allows tools in defaults.allow', () => {
     const policy = Policy.fromDocument({
-      defaults: { allow: ['list-mail-messages', 'identity-get-me'] },
+      defaults: { allow: ['mail-message-list', 'identity-get-me'] },
     });
-    expect(policy.check({ userPrincipalName: null, toolName: 'list-mail-messages' })).toBe(true);
+    expect(policy.check({ userPrincipalName: null, toolName: 'mail-message-list' })).toBe(true);
     expect(policy.check({ userPrincipalName: 'u@example.com', toolName: 'identity-get-me' })).toBe(true);
   });
 
@@ -73,10 +73,10 @@ describe('Policy.check', () => {
   it('treats a null UPN as anonymous and only consults defaults', () => {
     const policy = Policy.fromDocument({
       defaults: { allow: ['identity-get-me'] },
-      users: { 'someone@example.com': { allow: ['list-mail-messages'] } },
+      users: { 'someone@example.com': { allow: ['mail-message-list'] } },
     });
     expect(policy.check({ userPrincipalName: null, toolName: 'identity-get-me' })).toBe(true);
-    expect(policy.check({ userPrincipalName: null, toolName: 'list-mail-messages' })).toBe(false);
+    expect(policy.check({ userPrincipalName: null, toolName: 'mail-message-list' })).toBe(false);
   });
 
   it('an empty document denies everything', () => {

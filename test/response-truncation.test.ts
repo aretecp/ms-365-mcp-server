@@ -59,7 +59,7 @@ describe('response-size ceiling', () => {
     expect(body.value).toHaveLength(1);
   });
 
-  it('includes an opaque nextCursor when the page had an @odata.nextLink', async () => {
+  it('does not emit a continuation cursor — truncation is narrow-only (even with a nextLink)', async () => {
     const gc = makeGraphClient(
       bigListPayload(50, {
         '@odata.nextLink': 'https://graph.microsoft.com/v1.0/me/messages?$skip=50',
@@ -69,9 +69,20 @@ describe('response-size ceiling', () => {
 
     const body = JSON.parse(result.content[0].text);
     expect(body.truncated).toBe(true);
-    expect(typeof body.nextCursor).toBe('string');
-    expect(body.nextCursor.length).toBeGreaterThan(0);
-    expect(body.hint).toContain('nextCursor');
+    expect(body.nextCursor).toBeUndefined();
+    expect(body.hint).toContain('Narrow');
+    expect(body.hint).toContain('no continuation cursor');
+  });
+
+  it('keeps a single over-budget item rather than emptying the value array', async () => {
+    process.env.MS365_MCP_MAX_RESPONSE_CHARS = '120';
+    const gc = makeGraphClient(JSON.stringify({ value: [{ id: '1', subject: 'z'.repeat(400) }] }));
+    const result = await executeTool(findTool('mail-message-list'), gc, {});
+
+    const body = JSON.parse(result.content[0].text);
+    expect(body.truncated).toBe(true);
+    expect(body.returnedCount).toBe(1);
+    expect(body.value).toHaveLength(1);
   });
 
   it('does not reshape a non-collection JSON response over the ceiling', async () => {

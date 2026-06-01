@@ -117,7 +117,7 @@ describe('admin policy editor', () => {
 
   it('POST /admin/policy writes the new YAML, reloads, and redirects with ?saved=1', async () => {
     harness = buildHarness('defaults:\n  allow:\n    - identity-get-me\n');
-    const newYaml = 'defaults:\n  allow:\n    - identity-get-me\n    - list-mail-messages\n';
+    const newYaml = 'defaults:\n  allow:\n    - identity-get-me\n    - mail-message-list\n';
     const res = await request(harness.app)
       .post('/admin/policy')
       .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`)
@@ -133,7 +133,7 @@ describe('admin policy editor', () => {
     expect(
       harness.policyManager.check({
         userPrincipalName: 'anyone@example.com',
-        toolName: 'list-mail-messages',
+        toolName: 'mail-message-list',
       })
     ).toBe(true);
   });

@@ -22,7 +22,6 @@ import {
   isToolEnabled,
   type ToolsetSelection,
 } from './toolset-config.js';
-import type { PolicySummary } from './policy/index.js';
 
 /** Hard cap on Graph `$top` for list requests, configurable via env. */
 function maxTopFromEnv(): number | undefined {
@@ -79,23 +78,20 @@ function isListTool(tool: Tool): boolean {
   return tool.method === 'GET' && tool.params.some((p) => p.name === 'top');
 }
 
-/** Base64 opaque cursor from a Graph `@odata.nextLink` (path+query, minus the version segment). */
-function nextLinkToCursor(nextLink: string): string | undefined {
-  try {
-    const url = new URL(nextLink);
-    return Buffer.from(`${url.pathname.replace('/v1.0', '')}${url.search}`).toString('base64');
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Enforce the response-size ceiling on a JSON list payload. Only collections
  * (`{ value: [...] }`) are reshaped — non-collection and non-JSON (binary)
  * responses are returned untouched. When over budget, items are dropped from
  * the end (halving) until the serialized envelope fits, and the result is
- * wrapped as `{ value, truncated, returnedCount, totalCount, hint, nextCursor? }`
- * — keeping the Graph `value` key so callers/`fetchAllPages` shapes still match.
+ * wrapped as `{ value, truncated, returnedCount, totalCount, hint }` — keeping
+ * the Graph `value` key so callers/`fetchAllPages` shapes still match.
+ *
+ * The hint steers the model to NARROW the request (filter/search/top/select or a
+ * tighter scope) rather than paginate: there is deliberately no continuation
+ * cursor. No tool consumes one, and after a `fetchAllPages` merge the
+ * `@odata.nextLink` is already gone — and even when present it points *past* the
+ * dropped tail, so a cursor would skip the very items that were truncated.
+ * Narrowing is the only correct continuation.
  *
  * Note: this runs on the already-serialized JSON text, mirroring the
  * `fetchAllPages` merge which also assumes JSON. In TOON output mode the text
@@ -115,9 +111,6 @@ function shapeResponseSize(text: string): string {
   const items = parsed['value'];
   if (!Array.isArray(items)) return text;
 
-  const nextLink = typeof parsed['@odata.nextLink'] === 'string' ? parsed['@odata.nextLink'] : undefined;
-  const cursor = nextLink ? nextLinkToCursor(nextLink) : undefined;
-
   let kept = items.length;
   let envelope: Record<string, unknown> = parsed;
   while (kept > 0) {
@@ -128,12 +121,17 @@ function shapeResponseSize(text: string): string {
       totalCount: items.length,
       hint:
         `Response truncated to ${kept} of ${items.length} items to fit the context budget. ` +
-        (cursor
-          ? 'Pass nextCursor to continue, or narrow with $filter/$search/$select.'
-          : 'Narrow the request with $filter/$search/$select to see more.'),
-      ...(cursor ? { nextCursor: cursor } : {}),
+        'Narrow the request ($filter/$search/$top/$select, or a tighter date/folder scope) to see the rest — there is no continuation cursor.',
     };
-    if (JSON.stringify(envelope).length <= cap || kept === 1) break;
+    const size = JSON.stringify(envelope).length;
+    if (size <= cap || kept === 1) {
+      if (kept === 1 && size > cap) {
+        logger.warn(
+          `Single item still exceeds the response-size ceiling (${size} > ${cap} chars); returning it anyway.`
+        );
+      }
+      break;
+    }
     kept = Math.floor(kept / 2);
   }
   logger.info(`Truncated list response from ${items.length} to ${kept} items (response-size ceiling)`);
@@ -690,9 +688,8 @@ function logPolicyRegistrationDrift(
   policy: PolicyChecker | undefined,
   registeredNames: Set<string>
 ): void {
-  const summarizable = policy as { summary?: () => PolicySummary } | undefined;
-  if (!summarizable?.summary) return;
-  const summary = summarizable.summary();
+  if (!policy?.summary) return;
+  const summary = policy.summary();
   const policyNames = new Set<string>([
     ...summary.defaultAllow,
     ...summary.users.flatMap((u) => [...u.allow, ...u.deny]),

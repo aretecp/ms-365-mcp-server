@@ -97,7 +97,7 @@ export const sharepointTools: readonly Tool[] = [
         : `/drives/${drive}/root/children`;
     },
     params: [
-      { name: 'drive-id', location: 'query', schema: z.string().describe('Drive id (from sharepoint-drive-list)') },
+      { name: 'drive-id', location: 'query', schema: z.string().min(1).describe('Drive id (from sharepoint-drive-list)') },
       {
         name: 'driveItem-id',
         location: 'query',
@@ -117,7 +117,7 @@ export const sharepointTools: readonly Tool[] = [
   {
     name: 'sharepoint-drive-item-get',
     description:
-      'Get metadata for a single item (file or folder) in a SharePoint document library or any drive by drive-id. Omit driveItem-id for the drive root item; pass an item-id for a specific item.',
+      'Get metadata for a single item (file or folder) in a SharePoint document library or any drive by drive-id. Omit driveItem-id for the drive root item; pass a driveItem-id for a specific item.',
     method: 'GET',
     path: '/drives/{drive-id}/root',
     scopes: ['Sites.Read.All'],
@@ -130,7 +130,7 @@ export const sharepointTools: readonly Tool[] = [
         : `/drives/${drive}/root`;
     },
     params: [
-      { name: 'drive-id', location: 'query', schema: z.string().describe('Drive id (from sharepoint-drive-list)') },
+      { name: 'drive-id', location: 'query', schema: z.string().min(1).describe('Drive id (from sharepoint-drive-list)') },
       {
         name: 'driveItem-id',
         location: 'query',
