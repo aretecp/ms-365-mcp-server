@@ -127,13 +127,29 @@ const attachmentWriteSchema = z
 
 export const mailTools: readonly Tool[] = [
   {
-    name: 'list-mail-messages',
-    description: "List the signed-in user's mail messages.",
+    name: 'mail-message-list',
+    description:
+      "List the signed-in user's mail messages. Pass folder-id to scope to one folder (discover ids with list-mail-folders); omit to list across the whole mailbox.",
     method: 'GET',
     path: '/me/messages',
     scopes: ['Mail.Read'],
     projection: 'mail',
+    resolverParams: ['folder-id'],
+    pathResolver: (p) =>
+      typeof p['folder-id'] === 'string' && p['folder-id'].length > 0
+        ? `/me/mailFolders/${encodeURIComponent(p['folder-id'])}/messages`
+        : '/me/messages',
     params: [
+      {
+        name: 'folder-id',
+        location: 'query',
+        schema: z
+          .string()
+          .describe(
+            'Optional mail folder id (from list-mail-folders). Omit to list across all folders.'
+          )
+          .optional(),
+      },
       OData.filter,
       OData.search,
       OData.select,
@@ -168,30 +184,6 @@ export const mailTools: readonly Tool[] = [
     path: '/me/mailFolders',
     scopes: ['Mail.Read'],
     params: [OData.filter, OData.select, OData.orderby, OData.top, OData.skip, OData.count],
-  },
-  {
-    name: 'list-mail-folder-messages',
-    description: 'List messages inside a specific mail folder.',
-    method: 'GET',
-    path: '/me/mailFolders/{mailFolder-id}/messages',
-    scopes: ['Mail.Read'],
-    projection: 'mail',
-    params: [
-      {
-        name: 'mailFolder-id',
-        location: 'path',
-        schema: z.string().describe('Mail folder id (use list-mail-folders to discover)'),
-      },
-      OData.filter,
-      OData.search,
-      OData.select,
-      OData.orderby,
-      OData.top,
-      OData.skip,
-      OData.count,
-      OData.expand,
-    ],
-    llmTip: MAIL_SEARCH_TIP,
   },
   {
     name: 'list-mail-attachments',

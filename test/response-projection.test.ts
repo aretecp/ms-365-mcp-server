@@ -33,7 +33,7 @@ afterEach(() => {
 describe('default projection ($select)', () => {
   it('injects the Minimal* mail field set when the caller omits $select', async () => {
     const { gc, calls } = makeGraphClient();
-    await executeTool(findTool('list-mail-messages'), gc, {});
+    await executeTool(findTool('mail-message-list'), gc, {});
     const path = calls()[0];
     expect(path).toContain('$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview');
   });
@@ -46,13 +46,13 @@ describe('default projection ($select)', () => {
 
   it("response_format: 'detailed' suppresses the default projection", async () => {
     const { gc, calls } = makeGraphClient();
-    await executeTool(findTool('list-mail-messages'), gc, { response_format: 'detailed' });
+    await executeTool(findTool('mail-message-list'), gc, { response_format: 'detailed' });
     expect(calls()[0]).not.toContain('$select=');
   });
 
   it('respects an explicit caller $select (does not override)', async () => {
     const { gc, calls } = makeGraphClient();
-    await executeTool(findTool('list-mail-messages'), gc, { select: 'id,subject' });
+    await executeTool(findTool('mail-message-list'), gc, { select: 'id,subject' });
     const path = calls()[0];
     expect(path).toContain('$select=id,subject');
     expect(path).not.toContain('bodyPreview');
@@ -68,20 +68,20 @@ describe('default projection ($select)', () => {
 describe('default page size ($top)', () => {
   it('injects $top=15 for a list GET when the caller omits it', async () => {
     const { gc, calls } = makeGraphClient();
-    await executeTool(findTool('list-mail-messages'), gc, {});
+    await executeTool(findTool('mail-message-list'), gc, {});
     expect(calls()[0]).toContain('$top=15');
   });
 
   it('honors MS365_MCP_DEFAULT_TOP', async () => {
     process.env.MS365_MCP_DEFAULT_TOP = '5';
     const { gc, calls } = makeGraphClient();
-    await executeTool(findTool('list-mail-messages'), gc, {});
+    await executeTool(findTool('mail-message-list'), gc, {});
     expect(calls()[0]).toContain('$top=5');
   });
 
   it('respects an explicit caller top', async () => {
     const { gc, calls } = makeGraphClient();
-    await executeTool(findTool('list-mail-messages'), gc, { top: 50 });
+    await executeTool(findTool('mail-message-list'), gc, { top: 50 });
     const path = calls()[0];
     expect(path).toContain('$top=50');
     expect(path).not.toContain('$top=15');
@@ -95,7 +95,23 @@ describe('default page size ($top)', () => {
 
   it('does not inject a default $top when fetchAllPages is requested', async () => {
     const { gc, calls } = makeGraphClient();
-    await executeTool(findTool('list-mail-messages'), gc, { fetchAllPages: true });
+    await executeTool(findTool('mail-message-list'), gc, { fetchAllPages: true });
     expect(calls()[0]).not.toContain('$top=15');
+  });
+});
+
+describe('mail-message-list folder scoping (U3)', () => {
+  it('lists across the mailbox when folder-id is omitted', async () => {
+    const { gc, calls } = makeGraphClient();
+    await executeTool(findTool('mail-message-list'), gc, {});
+    expect(calls()[0]).toMatch(/^\/me\/messages/);
+  });
+
+  it('scopes to a folder when folder-id is given, without leaking it to the query', async () => {
+    const { gc, calls } = makeGraphClient();
+    await executeTool(findTool('mail-message-list'), gc, { 'folder-id': 'AAMkFolder' });
+    const path = calls()[0];
+    expect(path).toMatch(/^\/me\/mailFolders\/AAMkFolder\/messages/);
+    expect(path).not.toContain('folder-id');
   });
 });

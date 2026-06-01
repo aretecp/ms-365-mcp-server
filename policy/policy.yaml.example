@@ -24,10 +24,9 @@
 defaults:
   allow:
     # Mail (read)
-    - list-mail-messages
+    - mail-message-list
     - get-mail-message
     - list-mail-folders
-    - list-mail-folder-messages
     - list-mail-attachments
 
     # Calendar (read)

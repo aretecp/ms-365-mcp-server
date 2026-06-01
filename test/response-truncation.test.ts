@@ -39,7 +39,7 @@ afterEach(() => delete process.env.MS365_MCP_MAX_RESPONSE_CHARS);
 describe('response-size ceiling', () => {
   it('truncates an over-budget list and emits a valid marked envelope', async () => {
     const gc = makeGraphClient(bigListPayload(50));
-    const result = await executeTool(findTool('list-mail-messages'), gc, {});
+    const result = await executeTool(findTool('mail-message-list'), gc, {});
 
     const body = JSON.parse(result.content[0].text);
     expect(body.truncated).toBe(true);
@@ -52,7 +52,7 @@ describe('response-size ceiling', () => {
 
   it('leaves an under-budget response untouched (no envelope)', async () => {
     const gc = makeGraphClient(bigListPayload(1));
-    const result = await executeTool(findTool('list-mail-messages'), gc, {});
+    const result = await executeTool(findTool('mail-message-list'), gc, {});
 
     const body = JSON.parse(result.content[0].text);
     expect(body.truncated).toBeUndefined();
@@ -65,7 +65,7 @@ describe('response-size ceiling', () => {
         '@odata.nextLink': 'https://graph.microsoft.com/v1.0/me/messages?$skip=50',
       })
     );
-    const result = await executeTool(findTool('list-mail-messages'), gc, {});
+    const result = await executeTool(findTool('mail-message-list'), gc, {});
 
     const body = JSON.parse(result.content[0].text);
     expect(body.truncated).toBe(true);
