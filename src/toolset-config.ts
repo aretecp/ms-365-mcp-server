@@ -69,3 +69,8 @@ export function isToolEnabled(
   if (CORE_TOOL_NAMES.has(tool.name)) return true;
   return tool.toolset !== undefined && enabled.has(tool.toolset);
 }
+
+/** Whether a whole domain toolset is enabled (used to scope server instructions). */
+export function isToolsetEnabled(toolset: Toolset, enabled: ToolsetSelection): boolean {
+  return enabled === 'all' || enabled.has(toolset);
+}
