@@ -114,6 +114,19 @@ export interface Tool {
    * any message id.
    */
   precondition?: ToolPrecondition;
+  /**
+   * Optional per-tool path builder. When present, the runtime uses its return
+   * value as the Graph path instead of the static {@link Tool.path} template —
+   * letting one tool select between path shapes by the presence of an id (e.g.
+   * a list tool that targets `/me/messages` or `/me/mailFolders/{id}/messages`).
+   *
+   * It MUST return a fully-substituted path (no `{placeholder}` left). The param
+   * names it consumes are declared in {@link Tool.resolverParams} so the runtime
+   * skips them in the param loop and they never leak onto the query string.
+   */
+  pathResolver?: (params: Record<string, unknown>) => string;
+  /** Param names consumed by {@link Tool.pathResolver}; skipped in the param loop. */
+  resolverParams?: string[];
 }
 
 /**

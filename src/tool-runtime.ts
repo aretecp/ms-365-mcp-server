@@ -264,7 +264,7 @@ async function executeTool(
     const paramByName = new Map<string, ToolParam>();
     for (const p of tool.params) paramByName.set(p.name, p);
 
-    let path = tool.path;
+    let path = tool.pathResolver ? tool.pathResolver(params) : tool.path;
     const queryParams: Record<string, string> = {};
     const headers: Record<string, string> = {};
     let body: unknown = null;
@@ -278,6 +278,10 @@ async function executeTool(
 
     for (const [paramName, paramValue] of Object.entries(params)) {
       if (CONTROL_PARAM_NAMES.has(paramName)) continue;
+      // Params consumed by a pathResolver are already baked into the path —
+      // skip them so they don't leak to the query string or the unknown-param
+      // path-placeholder fallback below.
+      if (tool.resolverParams?.includes(paramName)) continue;
 
       const def = paramByName.get(paramName);
 
@@ -310,6 +314,16 @@ async function executeTool(
           break;
         }
       }
+    }
+
+    // Invariant: every `{placeholder}` must have been substituted (by the param
+    // loop or by a pathResolver). A leftover means a malformed resolver or a
+    // missing path param — the Graph call would fail; surface it loudly.
+    const unresolved = path.match(/\{[^}]+\}/);
+    if (unresolved) {
+      logger.warn(
+        `Tool ${tool.name} left an unsubstituted path placeholder ${unresolved[0]} — the Graph call will likely fail.`
+      );
     }
 
     applyResponseDefaults(tool, queryParams, params);
