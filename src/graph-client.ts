@@ -73,6 +73,13 @@ class GraphClient {
     this.outputFormat = outputFormat;
   }
 
+  /** The active serialization format for responses. The single source of truth
+   * for callers (e.g. `fetchAllPages` in tool-runtime) that must reason about
+   * whether response text is parseable JSON before operating on it. */
+  get format(): 'json' | 'toon' {
+    return this.outputFormat;
+  }
+
   async makeRequest(endpoint: string, options: GraphRequestOptions = {}): Promise<unknown> {
     const accessToken = options.accessToken ?? getRequestContext()?.accessToken;
 
