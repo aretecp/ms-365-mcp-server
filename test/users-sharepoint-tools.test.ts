@@ -115,7 +115,9 @@ describe('PR 7 runtime — paths and queries', () => {
   });
 
   it('sharepoint-site-list passes the plain search query through (not OData $search)', async () => {
-    await executeTool(findTool('sharepoint-site-list'), mockGraphClient, { search: 'Finance Team' });
+    await executeTool(findTool('sharepoint-site-list'), mockGraphClient, {
+      search: 'Finance Team',
+    });
     const path = graphRequest.mock.calls[0][0] as string;
     // `search` is not in ODATA_PARAM_NAMES? Actually it IS — let me check the runtime mapping.
     // The runtime prepends `$` for OData params; on sharepoint-site-list we use the same `search` key

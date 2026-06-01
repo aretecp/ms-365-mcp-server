@@ -45,7 +45,7 @@ describe('toolset registration filter', () => {
     }
   });
 
-  it("enabling a single toolset registers that domain (and leaves others off)", () => {
+  it('enabling a single toolset registers that domain (and leaves others off)', () => {
     const names = registeredNames({ toolsets: new Set(['sharepoint']) });
     expect(names).toContain('sharepoint-site-list');
     expect(names).toContain('sharepoint-drive-children-list');
@@ -69,7 +69,9 @@ describe('toolset registration filter', () => {
   });
 
   it('warns when policy allows a tool that is not registered', () => {
-    const policy = Policy.fromDocument({ defaults: { allow: ['teams-chat-list', 'identity-get-me'] } });
+    const policy = Policy.fromDocument({
+      defaults: { allow: ['teams-chat-list', 'identity-get-me'] },
+    });
     registeredNames({ policy }); // core only → teams-chat-list not registered
     expect(logger.warn as Mock).toHaveBeenCalledWith(expect.stringContaining("'teams-chat-list'"));
   });
@@ -84,9 +86,10 @@ describe('policy.yaml.example name consistency (U2b)', () => {
     expect(allowed.length).toBeGreaterThan(0);
     const registered = new Set(registeredNames({ toolsets: 'all' }));
     for (const name of allowed) {
-      expect(registered, `policy.yaml.example lists '${name}' which is not a registered tool`).toContain(
-        name
-      );
+      expect(
+        registered,
+        `policy.yaml.example lists '${name}' which is not a registered tool`
+      ).toContain(name);
     }
   });
 });

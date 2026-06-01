@@ -47,7 +47,7 @@ export const filesTools: readonly Tool[] = [
   {
     name: 'drive-item-get',
     description:
-      "Get metadata for a OneDrive item (file or folder). Omit item-id for the drive root item; pass an item-id for a specific item. For SharePoint, use sharepoint-drive-item-get.",
+      'Get metadata for a OneDrive item (file or folder). Omit item-id for the drive root item; pass an item-id for a specific item. For SharePoint, use sharepoint-drive-item-get.',
     method: 'GET',
     path: '/me/drive/root',
     scopes: ['Files.Read'],

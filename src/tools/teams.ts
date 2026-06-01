@@ -293,7 +293,7 @@ export const teamsTools: readonly Tool[] = [
   {
     name: 'teams-online-meeting-find',
     description:
-      "Resolve a single online meeting by id OR by joinWebUrl (pass exactly one). Use meeting-id when you already have it; use join-web-url for a user-supplied Teams link (normalize it with parse-teams-url first). Returns the meeting metadata including id.",
+      'Resolve a single online meeting by id OR by joinWebUrl (pass exactly one). Use meeting-id when you already have it; use join-web-url for a user-supplied Teams link (normalize it with parse-teams-url first). Returns the meeting metadata including id.',
     method: 'GET',
     path: '/me/onlineMeetings',
     scopes: ['OnlineMeetings.Read'],
@@ -315,19 +315,25 @@ export const teamsTools: readonly Tool[] = [
       {
         name: 'meeting-id',
         location: 'query',
-        schema: z.string().describe('Online meeting id. Provide this OR join-web-url, not both.').optional(),
+        schema: z
+          .string()
+          .describe('Online meeting id. Provide this OR join-web-url, not both.')
+          .optional(),
       },
       {
         name: 'join-web-url',
         location: 'query',
         schema: z
           .string()
-          .describe('Teams joinWebUrl (from parse-teams-url). Provide this OR meeting-id, not both.')
+          .describe(
+            'Teams joinWebUrl (from parse-teams-url). Provide this OR meeting-id, not both.'
+          )
           .optional(),
       },
       OData.select,
     ],
-    llmTip: 'Pair with parse-teams-url to normalize a user-supplied Teams link before passing join-web-url.',
+    llmTip:
+      'Pair with parse-teams-url to normalize a user-supplied Teams link before passing join-web-url.',
   },
   {
     name: 'teams-meeting-transcript-list',

@@ -1,6 +1,6 @@
 ---
-title: "Designing an ergonomic MCP tool surface without breaking authorization"
-module: "ms-365-mcp-server"
+title: 'Designing an ergonomic MCP tool surface without breaking authorization'
+module: 'ms-365-mcp-server'
 date: 2026-06-01
 problem_type: architecture_pattern
 component: tooling
@@ -47,7 +47,7 @@ When adding a response-size ceiling that drops list items, it is tempting to emi
 
 - **No tool consumed the cursor** — the model was told to "Pass nextCursor to continue" with no parameter to pass it to.
 - **The cursor pointed past the dropped tail.** Truncation kept items `0..kept`, but the cursor was the page's original `@odata.nextLink` (`$skip=50`) — following it would skip the very items that were truncated.
-- **It vanished after a full-pages merge.** The `fetchAllPages` block deletes `@odata.nextLink` *before* the size-ceiling runs, so the cursor was always absent for merged exports anyway.
+- **It vanished after a full-pages merge.** The `fetchAllPages` block deletes `@odata.nextLink` _before_ the size-ceiling runs, so the cursor was always absent for merged exports anyway.
 
 The honest contract is **narrow-only**: emit `{ value, truncated, returnedCount, totalCount, hint }` and have the hint steer the agent to narrow the request (`$filter`/`$search`/`$top`/`$select` or a tighter scope). Keep the backend's `value` key so the shape matches non-truncated responses and the merge logic.
 
@@ -55,9 +55,9 @@ The honest contract is **narrow-only**: emit `{ value, truncated, returnedCount,
 
 Anthropic's empirical method ("instrument, then refactor against transcripts") presumes traffic. For a **greenfield server with no production data, no deployed policy, no existing clients**, that scaffolding is the wrong frame — telemetry can't accrue, so "gate consolidation on usage" stalls forever. Apply the best practices by design instead. Greenfield also makes the otherwise-deferred `service-resource-action` rename **free**: there is no deployed `policy.yaml` to alias, so you rewrite the policy file directly instead of carrying a back-compat alias layer (which itself is an auth-bug risk if matched at check time rather than normalized at load time).
 
-### 4. A toolset filter bounds the tool *surface*, not the OAuth scope
+### 4. A toolset filter bounds the tool _surface_, not the OAuth scope
 
-A static registration filter (a curated `CORE_TOOL_NAMES` set + an `MS365_MCP_TOOLSETS` env allowlist) is the biggest schema-token lever after response shaping. But be precise about what it controls: it changes which tools **register**, not what the access token **contains**. `resolveAuthScopes()` unions scopes over *all* tools and consent happens once at login. Claiming "a core deployment never advertises `Sites.Read.All`" is false unless you *also* make scope resolution toolset-aware and register the Entra app with only the core scopes. (An adversarial doc-review caught this exact false claim before implementation.)
+A static registration filter (a curated `CORE_TOOL_NAMES` set + an `MS365_MCP_TOOLSETS` env allowlist) is the biggest schema-token lever after response shaping. But be precise about what it controls: it changes which tools **register**, not what the access token **contains**. `resolveAuthScopes()` unions scopes over _all_ tools and consent happens once at login. Claiming "a core deployment never advertises `Sites.Read.All`" is false unless you _also_ make scope resolution toolset-aware and register the Entra app with only the core scopes. (An adversarial doc-review caught this exact false claim before implementation.)
 
 ## Why This Matters
 
@@ -95,9 +95,10 @@ envelope = {
   truncated: true,
   returnedCount: kept,
   totalCount: items.length,
-  hint: `Response truncated to ${kept} of ${items.length} items to fit the context budget. ` +
-        'Narrow the request ($filter/$search/$top/$select, or a tighter scope) — there is no continuation cursor.',
+  hint:
+    `Response truncated to ${kept} of ${items.length} items to fit the context budget. ` +
+    'Narrow the request ($filter/$search/$top/$select, or a tighter scope) — there is no continuation cursor.',
 };
 ```
 
-**Process that paid off:** research → plan → **two adversarial `document-review` rounds** → implement → `code-review`. The doc-review rounds caught, *before any code was written*, (a) the false OAuth-scope-reduction claim and (b) a drive-tool merge that would have folded `Sites.Read.All` SharePoint tools into a `Files.Read` OneDrive tool. Catching design errors at the plan stage is dramatically cheaper than catching them in implementation. The later `code-review` then caught the dead-end-cursor contract. Adversarial review at *both* the plan and the diff stage is worth the cost on auth-touching work.
+**Process that paid off:** research → plan → **two adversarial `document-review` rounds** → implement → `code-review`. The doc-review rounds caught, _before any code was written_, (a) the false OAuth-scope-reduction claim and (b) a drive-tool merge that would have folded `Sites.Read.All` SharePoint tools into a `Files.Read` OneDrive tool. Catching design errors at the plan stage is dramatically cheaper than catching them in implementation. The later `code-review` then caught the dead-end-cursor contract. Adversarial review at _both_ the plan and the diff stage is worth the cost on auth-touching work.
