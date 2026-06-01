@@ -1,3 +1,10 @@
+## [2.4.1](https://github.com/aretecp/ms-365-mcp-server/compare/v2.4.0...v2.4.1) (2026-06-01)
+
+### Bug Fixes
+
+* declare @eslint/js as direct devDependency ([#20](https://github.com/aretecp/ms-365-mcp-server/issues/20)) ([74a6b02](https://github.com/aretecp/ms-365-mcp-server/commit/74a6b02fdcbad6d586d8c43bcd9038b027ac663d))
+* never return a silent partial from fetchAllPages in TOON mode ([#19](https://github.com/aretecp/ms-365-mcp-server/issues/19)) ([8c9e1bc](https://github.com/aretecp/ms-365-mcp-server/commit/8c9e1bc857f96ce34f5039c0557885663a44f692))
+
 ## [2.4.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.3.0...v2.4.0) (2026-06-01)
 
 ### New Features
