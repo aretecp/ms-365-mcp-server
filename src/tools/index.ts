@@ -6,6 +6,7 @@ import { identityTools } from './identity.js';
 import { teamsTools } from './teams.js';
 import { usersTools } from './users.js';
 import { sharepointTools } from './sharepoint.js';
+import { utilityTools } from './utility.js';
 
 export type { Tool, ToolParam, ParamLocation } from './types.js';
 export { OData, ODATA_PARAM_NAMES } from './types.js';
@@ -38,3 +39,16 @@ export const ALL_TOOLS: readonly Tool[] = [
   ...tagToolset(usersTools, 'directory'),
   ...tagToolset(sharepointTools, 'sharepoint'),
 ];
+
+/**
+ * Canonical set of every callable tool name: the Graph-backed {@link ALL_TOOLS}
+ * plus the {@link utilityTools} (download-bytes, parse-teams-url). This is the
+ * full registry regardless of which toolsets a given deployment enables — a
+ * policy may legitimately reference a real tool that isn't enabled here, so the
+ * admin policy editor validates against this full set to catch typos (names
+ * that don't exist) without rejecting portable config.
+ */
+export const ALL_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
+  ...ALL_TOOLS.map((t) => t.name),
+  ...utilityTools.map((t) => t.name),
+]);

@@ -11,7 +11,8 @@ import {
 } from '../lib/microsoft-auth.js';
 import type { SessionManager } from '../sessions/manager.js';
 import type { PolicyManager } from '../policy/index.js';
-import { Policy, type PolicyDocument } from '../policy/index.js';
+import { Policy, findUnknownPolicyTools, type PolicyDocument } from '../policy/index.js';
+import { ALL_TOOL_NAMES } from '../tools/index.js';
 import type { AppSecrets } from '../secrets.js';
 import { atomicWriteSync } from './atomic-write.js';
 import { generateCsrfToken, verifyCsrfToken } from './csrf.js';
@@ -352,10 +353,24 @@ export function buildAdminRouter(opts: AdminRouterOptions): Router {
     }
     // Validate by trying to construct a Policy from the document. Throws on
     // structural problems we'd otherwise only see at the next reload.
+    const doc = (parsed as PolicyDocument | null) ?? {};
     try {
-      Policy.fromDocument((parsed as PolicyDocument | null) ?? {});
+      Policy.fromDocument(doc);
     } catch (err) {
       renderWithError(`Policy validation failed: ${(err as Error).message}`);
+      return;
+    }
+
+    // Refuse a policy that references tools that don't exist. A typo'd tool name
+    // silently never matches at runtime (fail-closed), so an allow that grants
+    // nothing — or a deny that protects nothing — would go unnoticed. Catch it
+    // here, before the policy is written to disk.
+    const unknownTools = findUnknownPolicyTools(doc, ALL_TOOL_NAMES);
+    if (unknownTools.length > 0) {
+      renderWithError(
+        `Unknown tool name(s): ${unknownTools.join(', ')}. ` +
+          `Check for typos — every tool listed in the policy must be a real MCP tool name.`
+      );
       return;
     }
 

@@ -159,6 +159,46 @@ export function evaluateMailSend(
   return { allowed: true };
 }
 
+/**
+ * Collect every tool name referenced anywhere in a policy document:
+ * `defaults.allow` plus every user's `allow` and `deny` lists. Deduplicated,
+ * order preserved by first appearance, blanks/non-strings skipped.
+ *
+ * Used by the admin policy editor to reject a saved policy that names a tool
+ * that doesn't exist (almost always a typo) before it's written to disk.
+ */
+export function collectReferencedToolNames(doc: PolicyDocument): string[] {
+  const seen = new Set<string>();
+  const add = (list: unknown): void => {
+    if (!Array.isArray(list)) return;
+    for (const v of list) if (typeof v === 'string' && v !== '') seen.add(v);
+  };
+  add(doc.defaults?.allow);
+  if (doc.users) {
+    for (const entry of Object.values(doc.users)) {
+      add(entry?.allow);
+      add(entry?.deny);
+    }
+  }
+  return [...seen];
+}
+
+/**
+ * Return the tool names a policy references that are NOT in `validToolNames`,
+ * in first-appearance order. An empty array means every referenced tool exists.
+ *
+ * The valid set is injected rather than imported so this module stays decoupled
+ * from the tool registry — `src/tools` already depends on the policy types, and
+ * importing it back here would be a circular dependency.
+ */
+export function findUnknownPolicyTools(
+  doc: PolicyDocument,
+  validToolNames: ReadonlySet<string> | Iterable<string>
+): string[] {
+  const valid = validToolNames instanceof Set ? validToolNames : new Set<string>(validToolNames);
+  return collectReferencedToolNames(doc).filter((name) => !valid.has(name));
+}
+
 const POLICY_PATH_ENV = 'MS365_MCP_POLICY_PATH';
 const DEFAULT_POLICY_PATH = path.join(process.cwd(), 'policy', 'policy.yaml');
 
