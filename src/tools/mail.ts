@@ -118,6 +118,51 @@ const assertSendWithinDomain: ToolPrecondition = async (graphClient, params, ctx
   }
 };
 
+/**
+ * Server-side guard for {@link mail-send} (direct send, no draft). Reads the
+ * recipients straight out of the request body (`body.message`) and enforces the
+ * exact same same-domain / allowed-domain policy as {@link assertSendWithinDomain}:
+ * the sender (authenticated caller) and EVERY recipient must share one email
+ * domain (and, if the policy pins `allowedDomains`, that domain must be listed).
+ *
+ * Unlike the draft path there is no message in the mailbox to probe — the
+ * payload IS the message — so the check runs purely against the inbound body
+ * before the `/me/sendMail` POST reaches Graph.
+ */
+const assertDirectSendWithinDomain: ToolPrecondition = async (_graphClient, params, ctx) => {
+  const body = params['body'];
+  if (!body || typeof body !== 'object') {
+    throw new Error('a request body with a `message` is required to send mail.');
+  }
+  const message = (body as { message?: unknown }).message;
+  if (!message || typeof message !== 'object') {
+    throw new Error(
+      'body.message is required and must be a message object carrying the recipients to validate.'
+    );
+  }
+
+  const recipients = collectRecipientAddresses(message as DraftSendProbe);
+  if (recipients.length === 0) {
+    throw new Error('the message has no recipients (to/cc/bcc) to send to.');
+  }
+
+  // Prefer the policy's configured decision; fall back to the fail-safe
+  // same-domain default when a tool runs without a policy (e.g. unit tests).
+  const decision = ctx.policy?.checkMailSend
+    ? ctx.policy.checkMailSend({ senderUpn: ctx.userPrincipalName, recipients })
+    : evaluateMailSend(DEFAULT_MAIL_SEND_CONFIG, {
+        senderUpn: ctx.userPrincipalName,
+        recipients,
+      });
+  if (!decision.allowed) {
+    throw new Error(
+      `refusing to send: ${decision.reason} ` +
+        'This server only sends mail when the sender and every recipient are in the same domain ' +
+        '(configurable via the mailSend policy block).'
+    );
+  }
+};
+
 const MAIL_SEARCH_TIP =
   'CRITICAL: When searching emails, the $search parameter value MUST be wrapped in double quotes. ' +
   'Format: $search="your search query here". Use KQL (Keyword Query Language) syntax to search ' +
@@ -174,6 +219,24 @@ const messageWriteSchema = z
     internetMessageHeaders: z
       .array(z.object({ name: z.string(), value: z.string() }).passthrough())
       .optional(),
+  })
+  .passthrough();
+
+/**
+ * Body shape for {@link mail-send} (`POST /me/sendMail`): the message to send
+ * plus an optional `saveToSentItems` flag. The message reuses
+ * {@link messageWriteSchema}, so recipients/subject/body/attachments are the
+ * same fields as a draft — just sent in one step instead of created first.
+ */
+const sendMailBodySchema = z
+  .object({
+    message: messageWriteSchema.describe(
+      'The message to send: toRecipients (+ optional cc/bcc), subject, body, etc.'
+    ),
+    saveToSentItems: z
+      .boolean()
+      .optional()
+      .describe('Whether to save the sent message in Sent Items. Defaults to true.'),
   })
   .passthrough();
 
@@ -383,5 +446,35 @@ export const mailTools: readonly Tool[] = [
       'Use only after the draft exists and its recipients are confirmed. If the send is refused for a ' +
       'cross-domain recipient, do NOT retry by rewriting recipients — the human must send externally from Outlook. ' +
       'On success Graph returns 202 with no body; the draft moves to Sent Items.',
+  },
+  {
+    name: 'mail-send',
+    description:
+      'Send an email in one step, WITHOUT first creating a draft (POST /me/sendMail). Pass the whole ' +
+      'message (recipients, subject, body, optional attachments) in body.message. The server refuses ' +
+      'unless (a) the message has recipients and (b) the sender and EVERY recipient (to/cc/bcc) are in ' +
+      'the same email domain, per the mailSend policy (default: internal-only, e.g. @aretepartners.com). ' +
+      'This is the SAME same-domain / allowed-domain guard that protects mail-draft-send, enforced in ' +
+      'code before anything reaches Graph. Prefer mail-draft-create when the human should review the ' +
+      'message in Outlook before it goes out; use mail-send for unattended/internal sends.',
+    method: 'POST',
+    path: '/me/sendMail',
+    scopes: ['Mail.Send'],
+    precondition: assertDirectSendWithinDomain,
+    params: [
+      {
+        name: 'body',
+        location: 'body',
+        schema: sendMailBodySchema,
+      },
+    ],
+    llmTip:
+      'This delivers mail immediately with no draft to review, so it pairs well with an out-of-band ' +
+      'human-in-the-loop confirmation step BEFORE you call it: a request_human_input tool (if the host ' +
+      'exposes one) or an MCP elicitation request, so the operator approves the recipients and content ' +
+      'first. Resolve recipient addresses with user-search (or a known contact) before sending; do not ' +
+      'invent SMTP addresses. For HTML bodies set body.message.body.contentType to "html"; otherwise "text". ' +
+      'If the send is refused for a cross-domain recipient, do NOT retry by rewriting recipients — the ' +
+      'human must send externally from Outlook. On success Graph returns 202 with no body.',
   },
 ];

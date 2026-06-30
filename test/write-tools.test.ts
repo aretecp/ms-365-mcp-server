@@ -18,6 +18,7 @@ describe('write-tool registration', () => {
     'mail-message-update',
     'mail-attachment-add',
     'mail-message-delete',
+    'mail-send',
     'calendar-event-create',
     'calendar-event-update',
     'calendar-event-delete',
@@ -42,6 +43,17 @@ describe('write-tool registration', () => {
     expect(send.path).toBe('/me/messages/{message-id}/send');
     // The send guard is enforced in code via a precondition, not just the
     // description — without it, send would be unguarded.
+    expect(send.precondition).toBeDefined();
+  });
+
+  it('mail-send (direct send) hits /me/sendMail and carries the same-domain guard', () => {
+    const send = findTool('mail-send');
+    expect(send).toBeDefined();
+    expect(send.scopes).toContain('Mail.Send');
+    expect(send.method).toBe('POST');
+    expect(send.path).toBe('/me/sendMail');
+    // Same in-code same-domain guard as mail-draft-send; the description alone
+    // is not load-bearing.
     expect(send.precondition).toBeDefined();
   });
 
@@ -390,6 +402,146 @@ describe('mail-draft-send same-domain guard', () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('Policy denied');
     // Denied by policy before the precondition probe — no Graph call at all.
+    expect(graphRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('mail-send direct send same-domain guard', () => {
+  const recipient = (address: string) => ({ emailAddress: { address } });
+
+  // mail-send reads recipients straight from the request body — there is no
+  // draft to probe — so the mock only needs to answer the /me/sendMail POST.
+  function makeMock() {
+    const graphRequest = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: '' }] });
+    return { graphRequest, client: { graphRequest } as unknown as GraphClient };
+  }
+
+  const sendCall = (graphRequest: ReturnType<typeof vi.fn>) =>
+    graphRequest.mock.calls.find(([p]: [string]) => p === '/me/sendMail') as
+      | [string, { method: string }]
+      | undefined;
+
+  function run(
+    upn: string | null,
+    client: GraphClient,
+    body: Record<string, unknown>,
+    policy?: Policy
+  ) {
+    return requestContext.run(
+      { accessToken: 'at', userOid: 'oid', tenantId: 't', userPrincipalName: upn },
+      () => executeTool(findTool('mail-send'), client, { body }, policy)
+    );
+  }
+
+  const sameDomainPolicy = () =>
+    Policy.fromDocument({
+      defaults: { allow: ['mail-send'] },
+      mailSend: { requireSameDomain: true, allowedDomains: ['aretepartners.com'] },
+    });
+
+  it('sends when the sender and every recipient share the allowed domain', async () => {
+    const { graphRequest, client } = makeMock();
+    const result = await run(
+      'me@aretepartners.com',
+      client,
+      {
+        message: {
+          subject: 'hi',
+          toRecipients: [recipient('alice@aretepartners.com')],
+          ccRecipients: [recipient('bob@aretepartners.com')],
+        },
+      },
+      sameDomainPolicy()
+    );
+
+    expect(result.isError).toBeFalsy();
+    const call = sendCall(graphRequest)!;
+    expect(call[0]).toBe('/me/sendMail');
+    expect(call[1].method).toBe('POST');
+  });
+
+  it('refuses (and never POSTs) when any recipient is out of domain', async () => {
+    const { graphRequest, client } = makeMock();
+    const result = await run(
+      'me@aretepartners.com',
+      client,
+      {
+        message: {
+          toRecipients: [recipient('alice@aretepartners.com')],
+          bccRecipients: [recipient('outsider@gmail.com')],
+        },
+      },
+      sameDomainPolicy()
+    );
+
+    expect(result.isError).toBe(true);
+    const payload = JSON.parse((result.content[0] as { text: string }).text);
+    expect(payload.error).toMatch(/precondition failed/i);
+    expect(payload.error).toMatch(/outsider@gmail\.com/);
+    expect(sendCall(graphRequest)).toBeUndefined();
+  });
+
+  it('refuses when the sender domain is not in allowedDomains', async () => {
+    const { graphRequest, client } = makeMock();
+    const result = await run(
+      'me@other.com',
+      client,
+      { message: { toRecipients: [recipient('alice@other.com')] } },
+      sameDomainPolicy()
+    );
+
+    expect(result.isError).toBe(true);
+    const payload = JSON.parse((result.content[0] as { text: string }).text);
+    expect(payload.error).toMatch(/not in the policy's allowed send domains/i);
+    expect(sendCall(graphRequest)).toBeUndefined();
+  });
+
+  it('refuses (and never POSTs) when the message has no recipients', async () => {
+    const { graphRequest, client } = makeMock();
+    const result = await run(
+      'me@aretepartners.com',
+      client,
+      { message: { subject: 'lonely' } },
+      sameDomainPolicy()
+    );
+
+    expect(result.isError).toBe(true);
+    const payload = JSON.parse((result.content[0] as { text: string }).text);
+    expect(payload.error).toMatch(/no recipients/i);
+    expect(sendCall(graphRequest)).toBeUndefined();
+  });
+
+  it('falls back to the fail-safe same-domain default when no policy is configured', async () => {
+    const internal = makeMock();
+    const okResult = await run('me@example.com', internal.client, {
+      message: { toRecipients: [recipient('peer@example.com')] },
+    });
+    expect(okResult.isError).toBeFalsy();
+    expect(sendCall(internal.graphRequest)).toBeDefined();
+
+    const external = makeMock();
+    const denied = await run('me@example.com', external.client, {
+      message: { toRecipients: [recipient('peer@elsewhere.com')] },
+    });
+    expect(denied.isError).toBe(true);
+    expect(sendCall(external.graphRequest)).toBeUndefined();
+  });
+
+  it('respects the policy gate: a user without mail-send is denied before the guard runs', async () => {
+    const policy = Policy.fromDocument({
+      defaults: { allow: [] },
+      mailSend: { requireSameDomain: true, allowedDomains: ['aretepartners.com'] },
+    });
+    const { graphRequest, client } = makeMock();
+    const result = await run(
+      'me@aretepartners.com',
+      client,
+      { message: { toRecipients: [recipient('alice@aretepartners.com')] } },
+      policy
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Policy denied');
     expect(graphRequest).not.toHaveBeenCalled();
   });
 });
