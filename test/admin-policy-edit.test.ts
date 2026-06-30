@@ -177,6 +177,54 @@ describe('admin policy editor', () => {
     expect(res.status).toBe(401);
   });
 
+  it('POST /admin/policy rejects a policy that references an unknown tool name', async () => {
+    const originalYaml = 'defaults:\n  allow:\n    - identity-get-me\n';
+    harness = buildHarness(originalYaml);
+    // `create-draft-email` is not a real tool name (the real one is mail-draft-create).
+    const badYaml = 'defaults:\n  allow:\n    - identity-get-me\n    - create-draft-email\n';
+    const res = await request(harness.app)
+      .post('/admin/policy')
+      .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`)
+      .type('form')
+      .send({ csrf_token: harness.csrfToken, yaml: badYaml });
+    expect(res.status).toBe(400);
+    expect(res.text).toContain('Unknown tool name');
+    expect(res.text).toContain('create-draft-email');
+    // The bad policy must not have been written to disk.
+    expect(fs.readFileSync(harness.policyFile, 'utf8')).toBe(originalYaml);
+  });
+
+  it('POST /admin/policy rejects unknown tool names in a per-user allow/deny block', async () => {
+    const originalYaml = 'defaults:\n  allow:\n    - identity-get-me\n';
+    harness = buildHarness(originalYaml);
+    const badYaml =
+      'defaults:\n  allow:\n    - identity-get-me\n' +
+      'users:\n  spencer@example.com:\n    allow:\n      - send-chat-message\n';
+    const res = await request(harness.app)
+      .post('/admin/policy')
+      .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`)
+      .type('form')
+      .send({ csrf_token: harness.csrfToken, yaml: badYaml });
+    expect(res.status).toBe(400);
+    expect(res.text).toContain('send-chat-message');
+    expect(fs.readFileSync(harness.policyFile, 'utf8')).toBe(originalYaml);
+  });
+
+  it('POST /admin/policy accepts a policy whose tools all exist', async () => {
+    harness = buildHarness('defaults:\n  allow:\n    - identity-get-me\n');
+    const goodYaml =
+      'defaults:\n  allow:\n    - identity-get-me\n' +
+      'users:\n  spencer@example.com:\n    allow:\n      - mail-draft-create\n      - teams-chat-message-send\n';
+    const res = await request(harness.app)
+      .post('/admin/policy')
+      .set('Cookie', `${ADMIN_COOKIE_NAME}=${harness.adminSessionId}`)
+      .type('form')
+      .send({ csrf_token: harness.csrfToken, yaml: goodYaml });
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toBe('/admin/policy?saved=1');
+    expect(fs.readFileSync(harness.policyFile, 'utf8')).toBe(goodYaml);
+  });
+
   it('Policy.fromDocument validation runs on the submitted YAML before write', async () => {
     // A YAML that is structurally a mapping but with a non-mapping top level
     // should fail validation. (Empty doc + array is the easiest to construct.)

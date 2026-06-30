@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Policy, evaluateMailSend, DEFAULT_MAIL_SEND_CONFIG } from '../src/policy/index.js';
+import {
+  Policy,
+  evaluateMailSend,
+  DEFAULT_MAIL_SEND_CONFIG,
+  collectReferencedToolNames,
+  findUnknownPolicyTools,
+} from '../src/policy/index.js';
 import type { PolicySummary } from '../src/policy/index.js';
 
 describe('Policy.check', () => {
@@ -261,5 +267,64 @@ describe('Policy.checkMailSend', () => {
         recipients: ['peer@external.com'],
       }).allowed
     ).toBe(false);
+  });
+});
+
+describe('collectReferencedToolNames', () => {
+  it('gathers names from defaults.allow and every user allow/deny, deduped', () => {
+    const names = collectReferencedToolNames({
+      defaults: { allow: ['mail-message-list', 'identity-get-me'] },
+      users: {
+        'a@example.com': { allow: ['mail-draft-create', 'mail-message-list'] },
+        'b@example.com': { deny: ['download-bytes'] },
+      },
+    });
+    expect(names).toEqual([
+      'mail-message-list',
+      'identity-get-me',
+      'mail-draft-create',
+      'download-bytes',
+    ]);
+  });
+
+  it('skips blanks, non-strings, and missing sections', () => {
+    const names = collectReferencedToolNames({
+      defaults: { allow: ['mail-message-list', '', 42 as unknown as string] },
+    });
+    expect(names).toEqual(['mail-message-list']);
+  });
+});
+
+describe('findUnknownPolicyTools', () => {
+  const valid = new Set(['mail-message-list', 'mail-draft-create', 'download-bytes']);
+
+  it('returns an empty array when every referenced tool is valid', () => {
+    const unknown = findUnknownPolicyTools(
+      {
+        defaults: { allow: ['mail-message-list'] },
+        users: { 'a@example.com': { allow: ['mail-draft-create'], deny: ['download-bytes'] } },
+      },
+      valid
+    );
+    expect(unknown).toEqual([]);
+  });
+
+  it('reports referenced tools that do not exist, in first-appearance order', () => {
+    const unknown = findUnknownPolicyTools(
+      {
+        defaults: { allow: ['mail-message-list', 'create-draft-email'] },
+        users: { 'a@example.com': { allow: ['send-chat-message'] } },
+      },
+      valid
+    );
+    expect(unknown).toEqual(['create-draft-email', 'send-chat-message']);
+  });
+
+  it('accepts an iterable of valid names, not just a Set', () => {
+    const unknown = findUnknownPolicyTools(
+      { defaults: { allow: ['mail-message-list', 'bogus-tool'] } },
+      ['mail-message-list']
+    );
+    expect(unknown).toEqual(['bogus-tool']);
   });
 });
