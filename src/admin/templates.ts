@@ -299,6 +299,15 @@ export function policySummaryCard(summary: PolicySummary): string {
           .join('')
       : '<p style="color:#6e6e73;font-size:0.875rem">No per-user overrides.</p>';
 
+  const mailSend = summary.mailSend;
+  const mailSendValue = !mailSend.requireSameDomain
+    ? '<em>disabled — same-domain guard off</em>'
+    : mailSend.allowedDomains.length > 0
+      ? `same-domain only, restricted to ${mailSend.allowedDomains
+          .map((d) => `<span class="tool-pill allow">@${escapeHtml(d)}</span>`)
+          .join(' ')}`
+      : "same-domain only (sender's own domain)";
+
   return `<div class="policy-card">
     <div class="card-header">
       <h2>Policy summary</h2>
@@ -307,6 +316,10 @@ export function policySummaryCard(summary: PolicySummary): string {
     <div class="policy-section">
       <div class="policy-section-label">Default allow</div>
       <div>${defaultPills}</div>
+    </div>
+    <div class="policy-section">
+      <div class="policy-section-label">Mail send (same-domain guard)</div>
+      <div>${mailSendValue}</div>
     </div>
     <div class="policy-section">
       <div class="policy-section-label">Per-user overrides</div>

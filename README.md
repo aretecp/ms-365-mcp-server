@@ -8,7 +8,7 @@ Originally forked from [Softeria/ms-365-mcp-server](https://github.com/Softeria/
 
 Hand-written tool surface. Currently exposing:
 
-- **Mail**: read + draft + delete (Outlook). **No send** — see [Why no Mail.Send](#why-no-mailsend).
+- **Mail**: read + draft + delete + **same-domain send** (Outlook). Send is allowed only when the sender and every recipient share one domain — see [Same-domain Mail.Send](#same-domain-mailsend).
 - **Calendar**: read + create + update + delete events.
 - **Files (OneDrive)**: read-only.
 - **SharePoint**: sites, document libraries, lists — read-only.
@@ -47,7 +47,7 @@ npm run dev:http   # binds 127.0.0.1:3000
 Delegated permissions needed for the full v1.5 surface. **Bold scopes need admin consent** on the Entra app registration:
 
 - `User.Read`, `offline_access` (silently injected)
-- Mail: `Mail.Read`, `Mail.ReadWrite` (no `Mail.Send` — see [Why no Mail.Send](#why-no-mailsend))
+- Mail: `Mail.Read`, `Mail.ReadWrite`, `Mail.Send` (send is gated by a same-domain guard — see [Same-domain Mail.Send](#same-domain-mailsend))
 - Calendar: `Calendars.Read`, `Calendars.ReadWrite`
 - Files: `Files.Read`
 - Directory: **`User.ReadBasic.All`**
@@ -78,13 +78,25 @@ Point any MCP client (Claude, MCP Inspector/Jam, Cursor, …) at `https://<your-
 
 Clients that don't perform DCR (Claude.ai today) keep working via the legacy `MS365_MCP_ALLOWED_REDIRECT_URIS` fallback.
 
-### Why no Mail.Send
+### Same-domain Mail.Send
 
-The server can draft, update, attach to, and delete mail (`Mail.ReadWrite`) — but cannot send. There is no `send-draft-message` tool, and `Mail.Send` is deliberately omitted from the Entra app's requested scopes. Drafts the LLM produces sit in the user's Drafts folder; the human reviews them in Outlook and clicks Send themselves.
+The server can draft, update, attach to, delete, and **send** mail. Send is exposed through a single tool, `mail-draft-send` (`POST /me/messages/{id}/send`, scope `Mail.Send`), and is wrapped in a same-domain guard enforced **in code** before anything reaches Graph: the send is refused unless
 
-This is structural human-in-the-loop. With both the tool absent and the scope ungranted, an unintended `messages/{id}/send` call would be refused by Microsoft Graph even if it bypassed our policy layer.
+1. the message is a draft (`isDraft=true`), and
+2. the sender and **every** recipient (to/cc/bcc) are in the same email domain.
 
-We may re-add send capability in a future release with guardrails — at minimum an approved-recipients / approved-domain allow-list enforced at the tool layer before any send call reaches Graph. Tracked in [issue #9](https://github.com/aretecp/ms-365-mcp-server/issues/9).
+Two independent controls gate it. The per-user **policy** decides _who_ may call `mail-draft-send` at all (it is off `defaults.allow` like every other write tool, so a UPN must be granted it explicitly). The **`mailSend` policy block** then decides _which_ domains may send to themselves:
+
+```yaml
+mailSend:
+  requireSameDomain: true # master switch; default true even if this block is omitted
+  allowedDomains: # the shared domain must be one of these; empty => the sender's own domain
+    - aretepartners.com
+```
+
+So with the example policy, `me@aretepartners.com` can send to other `@aretepartners.com` recipients, but a draft addressed to any external recipient — or a sender outside `aretepartners.com` — is rejected. Admins tune this live via the admin UI (`/admin/policy`) or on disk + SIGHUP; the same-domain summary is shown on the dashboard. Set `requireSameDomain: false` to lift the domain restriction entirely (the per-user allow/deny gate still applies).
+
+The guard is a `Tool.precondition` (see [Server-enforced invariants](#server-enforced-invariants)) — it is enforced in the runtime, not by the tool description, so the model cannot talk its way past it. Cross-domain or external mail still goes through a human in Outlook. This closes out the approved-domain allow-list contemplated in [issue #9](https://github.com/aretecp/ms-365-mcp-server/issues/9).
 
 ## Server-enforced invariants
 
@@ -94,13 +106,14 @@ Mechanism: `Tool.precondition` in `src/tools/types.ts`. Before executing a tool,
 
 Current preconditions:
 
-| Tool                    | Invariant                             | Implementation                                                                           |
-| ----------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `mail-message-update`   | message must satisfy `isDraft=true`   | `assertIsDraft` — GET `/me/messages/{id}?$select=isDraft`, refuse if not a draft         |
-| `mail-attachment-add`   | message must satisfy `isDraft=true`   | same                                                                                     |
-| `mail-message-delete`   | message must satisfy `isDraft=true`   | same — model cannot mass-delete received mail                                            |
-| `calendar-event-update` | event must satisfy `isOrganizer=true` | `assertIsOrganizer` — GET `/me/events/{id}?$select=isOrganizer`, refuse if not organizer |
-| `calendar-event-delete` | event must satisfy `isOrganizer=true` | same                                                                                     |
+| Tool                    | Invariant                                                      | Implementation                                                                                    |
+| ----------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `mail-message-update`   | message must satisfy `isDraft=true`                            | `assertIsDraft` — GET `/me/messages/{id}?$select=isDraft`, refuse if not a draft                  |
+| `mail-attachment-add`   | message must satisfy `isDraft=true`                            | same                                                                                              |
+| `mail-message-delete`   | message must satisfy `isDraft=true`                            | same — model cannot mass-delete received mail                                                     |
+| `mail-draft-send`       | draft + sender and all recipients in the same (allowed) domain | `assertSendWithinDomain` — GET recipients, refuse cross-domain/external per the `mailSend` policy |
+| `calendar-event-update` | event must satisfy `isOrganizer=true`                          | `assertIsOrganizer` — GET `/me/events/{id}?$select=isOrganizer`, refuse if not organizer          |
+| `calendar-event-delete` | event must satisfy `isOrganizer=true`                          | same                                                                                              |
 
 `Mail.ReadWrite` at the Graph layer is broader than what we want to expose. Without `assertIsDraft`, the LLM could PATCH any message (mark as read, flag, recategorize), DELETE any message (clear an inbox), or attach files to received mail. The precondition closes that gap.
 

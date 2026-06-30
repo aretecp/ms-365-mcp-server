@@ -243,7 +243,7 @@ async function executeTool(
   // load-bearing for security; the runtime enforces invariants in code.
   if (tool.precondition) {
     try {
-      await tool.precondition(graphClient, params);
+      await tool.precondition(graphClient, params, { policy, userPrincipalName: upn });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn(`Precondition refused tool ${tool.name} for ${upn ?? 'anonymous'}: ${message}`);

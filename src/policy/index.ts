@@ -18,6 +18,44 @@ import logger from '../logger.js';
  */
 
 /**
+ * Same-domain guard for outbound mail (`mail-draft-send`). Sits in front of the
+ * Graph `messages/{id}/send` action: even a user the policy allows to send is
+ * refused unless the sender and EVERY recipient share one email domain.
+ *
+ * Configured under the `mailSend` key of the policy document so admins can tune
+ * it without a code change. Enforced in code by the tool precondition (see
+ * `src/tools/mail.ts`), not by the tool description.
+ */
+export interface MailSendPolicyConfig {
+  /**
+   * When true (the fail-safe default), `mail-draft-send` is allowed only if the
+   * sender and all recipients are in the same domain. Set false to disable the
+   * domain guard entirely (the per-tool allow/deny policy still applies).
+   */
+  requireSameDomain: boolean;
+  /**
+   * If non-empty, the shared domain MUST be one of these (e.g. `aretepartners.com`),
+   * so even an internal-only message from an unlisted domain is refused. Empty
+   * means "any single domain the sender belongs to" — the sender's own domain.
+   * Stored lowercased with any leading `@` stripped.
+   */
+  allowedDomains: string[];
+}
+
+/** Result of a {@link evaluateMailSend} / {@link PolicyChecker.checkMailSend} call. */
+export type MailSendDecision = { allowed: true } | { allowed: false; reason: string };
+
+/**
+ * Fail-safe default applied when no `mailSend` block is present in the policy
+ * (and as the fallback when a tool runs without a policy at all): require the
+ * sender and every recipient to share a domain, but don't pin which domain.
+ */
+export const DEFAULT_MAIL_SEND_CONFIG: MailSendPolicyConfig = {
+  requireSameDomain: true,
+  allowedDomains: [],
+};
+
+/**
  * Structured summary of the active policy for display in the admin dashboard.
  * Returned by {@link Policy.summary} / {@link PolicyManager.summary}.
  */
@@ -32,6 +70,8 @@ export interface PolicySummary {
     /** Tools explicitly denied for this user (overrides defaults). */
     deny: string[];
   }>;
+  /** Active same-domain send guard configuration. */
+  mailSend: MailSendPolicyConfig;
 }
 
 export interface PolicyDocument {
@@ -45,6 +85,10 @@ export interface PolicyDocument {
       deny?: string[];
     }
   >;
+  mailSend?: {
+    requireSameDomain?: boolean;
+    allowedDomains?: string[];
+  };
 }
 
 /**
@@ -57,6 +101,62 @@ export interface PolicyChecker {
   check(args: { userPrincipalName: string | null; toolName: string }): boolean;
   /** Optional structured view of the policy (Policy/PolicyManager implement it). */
   summary?(): PolicySummary;
+  /**
+   * Same-domain send guard. Returns the allow/deny decision for sending a draft
+   * to the given recipients as the given sender. Implemented by Policy /
+   * PolicyManager; callers that may receive a bare checker should fall back to
+   * {@link evaluateMailSend} with {@link DEFAULT_MAIL_SEND_CONFIG}.
+   */
+  checkMailSend?(args: { senderUpn: string | null; recipients: string[] }): MailSendDecision;
+}
+
+/** Lowercased domain part after the last `@`, or null when the address has none. */
+function domainOf(address: string | null | undefined): string | null {
+  if (typeof address !== 'string') return null;
+  const at = address.lastIndexOf('@');
+  if (at < 0 || at === address.length - 1) return null;
+  return address
+    .slice(at + 1)
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Pure same-domain decision. Allows the send only when the sender resolves to a
+ * domain, every recipient is in that exact domain, and (if `allowedDomains` is
+ * configured) that domain is on the allow-list. Returns a structured reason on
+ * denial so the runtime can surface it to the model.
+ */
+export function evaluateMailSend(
+  config: MailSendPolicyConfig,
+  args: { senderUpn: string | null; recipients: string[] }
+): MailSendDecision {
+  if (!config.requireSameDomain) return { allowed: true };
+
+  const senderDomain = domainOf(args.senderUpn);
+  if (!senderDomain) {
+    return {
+      allowed: false,
+      reason: 'could not determine the sender domain from the signed-in identity.',
+    };
+  }
+  if (config.allowedDomains.length > 0 && !config.allowedDomains.includes(senderDomain)) {
+    return {
+      allowed: false,
+      reason: `sender domain '${senderDomain}' is not in the policy's allowed send domains (${config.allowedDomains.join(', ')}).`,
+    };
+  }
+  if (args.recipients.length === 0) {
+    return { allowed: false, reason: 'the message has no recipients to validate.' };
+  }
+  const offenders = args.recipients.filter((r) => domainOf(r) !== senderDomain);
+  if (offenders.length > 0) {
+    return {
+      allowed: false,
+      reason: `every recipient must be in the sender's domain '${senderDomain}'. Out-of-domain recipient(s): ${offenders.join(', ')}.`,
+    };
+  }
+  return { allowed: true };
 }
 
 const POLICY_PATH_ENV = 'MS365_MCP_POLICY_PATH';
@@ -74,9 +174,31 @@ function normalizeList(arr: unknown): Set<string> {
   return out;
 }
 
+/** Lowercase domains, strip a leading `@`, drop blanks, and de-dup (sorted). */
+function normalizeDomains(arr: unknown): string[] {
+  if (!Array.isArray(arr)) return [];
+  const out = new Set<string>();
+  for (const v of arr) {
+    if (typeof v !== 'string') continue;
+    const d = v.trim().toLowerCase().replace(/^@/, '');
+    if (d !== '') out.add(d);
+  }
+  return [...out].sort();
+}
+
+function normalizeMailSend(raw: PolicyDocument['mailSend']): MailSendPolicyConfig {
+  return {
+    // Default ON: a missing/partial mailSend block must not silently open up
+    // unrestricted sending.
+    requireSameDomain: raw?.requireSameDomain ?? DEFAULT_MAIL_SEND_CONFIG.requireSameDomain,
+    allowedDomains: normalizeDomains(raw?.allowedDomains),
+  };
+}
+
 interface NormalizedPolicy {
   defaultAllow: Set<string>;
   perUser: Map<string, { allow: Set<string>; deny: Set<string> }>;
+  mailSend: MailSendPolicyConfig;
   sourcePath: string;
 }
 
@@ -91,7 +213,8 @@ function normalize(raw: PolicyDocument, sourcePath: string): NormalizedPolicy {
       });
     }
   }
-  return { defaultAllow, perUser, sourcePath };
+  const mailSend = normalizeMailSend(raw.mailSend);
+  return { defaultAllow, perUser, mailSend, sourcePath };
 }
 
 export class Policy implements PolicyChecker {
@@ -139,6 +262,16 @@ export class Policy implements PolicyChecker {
     return this.doc.defaultAllow.has(args.toolName);
   }
 
+  /** Active same-domain send guard configuration. */
+  mailSendConfig(): MailSendPolicyConfig {
+    return this.doc.mailSend;
+  }
+
+  /** Same-domain send decision for the configured {@link MailSendPolicyConfig}. */
+  checkMailSend(args: { senderUpn: string | null; recipients: string[] }): MailSendDecision {
+    return evaluateMailSend(this.doc.mailSend, args);
+  }
+
   /** Mostly for diagnostics. Returns the file path the policy was loaded from. */
   source(): string {
     return this.doc.sourcePath;
@@ -157,7 +290,14 @@ export class Policy implements PolicyChecker {
         allow: [...entry.allow].sort(),
         deny: [...entry.deny].sort(),
       }));
-    return { defaultAllow, users };
+    return {
+      defaultAllow,
+      users,
+      mailSend: {
+        requireSameDomain: this.doc.mailSend.requireSameDomain,
+        allowedDomains: [...this.doc.mailSend.allowedDomains],
+      },
+    };
   }
 }
 
@@ -194,6 +334,16 @@ export class PolicyManager implements PolicyChecker {
 
   check(args: { userPrincipalName: string | null; toolName: string }): boolean {
     return this.current.check(args);
+  }
+
+  /** Delegates to the currently-loaded Policy. */
+  mailSendConfig(): MailSendPolicyConfig {
+    return this.current.mailSendConfig();
+  }
+
+  /** Delegates to the currently-loaded Policy. */
+  checkMailSend(args: { senderUpn: string | null; recipients: string[] }): MailSendDecision {
+    return this.current.checkMailSend(args);
   }
 
   /** Visible for tests / diagnostics. */

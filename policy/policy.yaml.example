@@ -4,6 +4,7 @@
 #   defaults.allow:        list of tools every authenticated user may call
 #   users.<upn>.allow:     extra tools allowed for a specific Entra user
 #   users.<upn>.deny:      tools explicitly denied for a specific user (wins over allow)
+#   mailSend:              same-domain guard for the mail-draft-send tool (see below)
 #
 # Precedence: user.deny > user.allow > defaults.allow > default-deny.
 # Unknown users fall through to defaults.allow.
@@ -70,17 +71,39 @@ defaults:
     - download-bytes
     - parse-teams-url
 
+# Same-domain send guard for the mail-draft-send tool.
+#
+# mail-draft-send is the ONLY tool that can put mail on the wire (POST
+# /me/messages/{id}/send, scope Mail.Send). On top of the normal allow/deny
+# gate, the server enforces this guard IN CODE before the send reaches Graph:
+# the sender and EVERY recipient (to/cc/bcc) must share one email domain.
+#
+#   requireSameDomain:  master switch. Default true (and assumed true if this
+#                       block is omitted). Set false to disable the guard and
+#                       let the per-user allow/deny policy stand alone.
+#   allowedDomains:     if non-empty, the shared domain must be one of these,
+#                       so even an internal-only message from an unlisted domain
+#                       is refused. Empty/omitted => "the sender's own domain".
+#                       A leading '@' is optional and case is ignored.
+mailSend:
+  requireSameDomain: true
+  allowedDomains:
+    - aretepartners.com
+
 # Example per-user overrides. Keys are Entra userPrincipalNames (case-insensitive).
 #
 # users:
 #   spencer@areteintelligence.com:
 #     allow:
-#       # Mail drafts (no send — human reviews + sends from Outlook).
-#       # See README "Why no Mail.Send".
+#       # Mail drafts.
 #       - mail-draft-create
 #       - mail-message-update
 #       - mail-attachment-add
 #       - mail-message-delete
+#       # Mail send. Even with this allow, the mailSend same-domain guard above
+#       # still applies: the sender + every recipient must be in an allowed
+#       # domain or the send is refused in code.
+#       - mail-draft-send
 #       # Calendar writes
 #       - calendar-event-create
 #       - calendar-event-update

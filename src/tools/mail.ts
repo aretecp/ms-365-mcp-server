@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type GraphClient from '../graph-client.js';
 import { OData, type Tool, type ToolPrecondition } from './types.js';
+import { DEFAULT_MAIL_SEND_CONFIG, evaluateMailSend } from '../policy/index.js';
 
 /**
  * Server-side guard: refuses the tool call unless the referenced message is a
@@ -36,6 +37,83 @@ const assertIsDraft: ToolPrecondition = async (
     throw new Error(
       `message '${id}' is not a draft (isDraft=${String(msg?.isDraft)}). ` +
         'This tool refuses to modify non-draft mail. Create a fresh draft with mail-draft-create instead, or have the human action the message in Outlook.'
+    );
+  }
+};
+
+/** A single Outlook recipient as Graph returns it on a message. */
+interface GraphRecipient {
+  emailAddress?: { address?: string };
+}
+
+/** Shape of the precondition probe GET for {@link assertSendWithinDomain}. */
+interface DraftSendProbe {
+  isDraft?: boolean;
+  toRecipients?: GraphRecipient[];
+  ccRecipients?: GraphRecipient[];
+  bccRecipients?: GraphRecipient[];
+}
+
+/** Flatten to/cc/bcc into a single list of non-empty SMTP addresses. */
+function collectRecipientAddresses(msg: DraftSendProbe): string[] {
+  const groups = [msg.toRecipients, msg.ccRecipients, msg.bccRecipients];
+  const out: string[] = [];
+  for (const group of groups) {
+    if (!Array.isArray(group)) continue;
+    for (const r of group) {
+      const address = r?.emailAddress?.address;
+      if (typeof address === 'string' && address.trim() !== '') out.push(address.trim());
+    }
+  }
+  return out;
+}
+
+/**
+ * Server-side guard for {@link mail-draft-send}. Loads the draft, refuses if it
+ * is not actually a draft, then enforces the same-domain send policy: the
+ * sender (the authenticated caller) and EVERY recipient must share one email
+ * domain (and, if the policy pins `allowedDomains`, that domain must be listed).
+ *
+ * This is the recipient/domain allow-list the README flagged as a precondition
+ * for re-enabling send — enforced in code before any `messages/{id}/send` call
+ * reaches Graph, independent of the tool description or the model's intent.
+ */
+const assertSendWithinDomain: ToolPrecondition = async (graphClient, params, ctx) => {
+  const id = params['message-id'];
+  if (typeof id !== 'string' || id.length === 0) {
+    throw new Error('message-id is required and must be a non-empty string.');
+  }
+  const path = `/me/messages/${encodeURIComponent(id)}?$select=isDraft,toRecipients,ccRecipients,bccRecipients`;
+  let msg: DraftSendProbe | null;
+  try {
+    msg = (await graphClient.graphRequest(path, { method: 'GET' })) as DraftSendProbe | null;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `could not load the draft to validate recipients (lookup failed: ${message}). The message may not exist or the signed-in user may not have access.`
+    );
+  }
+  if (!msg || msg.isDraft !== true) {
+    throw new Error(
+      `message '${id}' is not a draft (isDraft=${String(msg?.isDraft)}). ` +
+        'mail-draft-send only sends drafts created and reviewed through this server; received or already-sent mail cannot be (re)sent.'
+    );
+  }
+
+  const recipients = collectRecipientAddresses(msg);
+  // Prefer the policy's configured decision; fall back to the fail-safe
+  // same-domain default when a tool runs without a policy (e.g. unit tests).
+  const decision = ctx.policy?.checkMailSend
+    ? ctx.policy.checkMailSend({ senderUpn: ctx.userPrincipalName, recipients })
+    : evaluateMailSend(DEFAULT_MAIL_SEND_CONFIG, {
+        senderUpn: ctx.userPrincipalName,
+        recipients,
+      });
+  if (!decision.allowed) {
+    throw new Error(
+      `refusing to send: ${decision.reason} ` +
+        'This server only sends mail when the sender and every recipient are in the same domain ' +
+        '(configurable via the mailSend policy block).'
     );
   }
 };
@@ -209,7 +287,7 @@ export const mailTools: readonly Tool[] = [
   {
     name: 'mail-draft-create',
     description:
-      "Create a draft email in the signed-in user's Drafts folder. Returns the new message including its id. The draft sits in Drafts until the human opens Outlook and clicks Send — this server has no send capability (see docs/DEPLOYMENT.md §3 on the deliberate Mail.Send exclusion).",
+      "Create a draft email in the signed-in user's Drafts folder. Returns the new message including its id. The draft stays in Drafts until it is either sent with mail-draft-send (allowed only when the sender and every recipient share the same domain) or reviewed and sent by the human in Outlook.",
     method: 'POST',
     path: '/me/messages',
     scopes: ['Mail.ReadWrite'],
@@ -282,5 +360,28 @@ export const mailTools: readonly Tool[] = [
         schema: z.string().describe('Draft message id (must satisfy isDraft=true)'),
       },
     ],
+  },
+  {
+    name: 'mail-draft-send',
+    description:
+      'Send an existing draft message by id. The server refuses unless (a) the message is a draft and ' +
+      '(b) the sender and EVERY recipient (to/cc/bcc) are in the same email domain, per the mailSend policy ' +
+      '(default: internal-only, e.g. @aretepartners.com). Cross-domain or external recipients are rejected in ' +
+      'code before anything reaches Graph — set the recipients on the draft (mail-draft-create / mail-message-update) and review them first.',
+    method: 'POST',
+    path: '/me/messages/{message-id}/send',
+    scopes: ['Mail.Send'],
+    precondition: assertSendWithinDomain,
+    params: [
+      {
+        name: 'message-id',
+        location: 'path',
+        schema: z.string().describe('Draft message id to send (must satisfy isDraft=true)'),
+      },
+    ],
+    llmTip:
+      'Use only after the draft exists and its recipients are confirmed. If the send is refused for a ' +
+      'cross-domain recipient, do NOT retry by rewriting recipients — the human must send externally from Outlook. ' +
+      'On success Graph returns 202 with no body; the draft moves to Sent Items.',
   },
 ];

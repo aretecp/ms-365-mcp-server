@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Policy } from '../src/policy/index.js';
+import { Policy, evaluateMailSend, DEFAULT_MAIL_SEND_CONFIG } from '../src/policy/index.js';
 import type { PolicySummary } from '../src/policy/index.js';
 
 describe('Policy.check', () => {
@@ -147,5 +147,119 @@ describe('Policy.summary', () => {
     });
     const user = policy.summary().users[0];
     expect(user.upn).toBe('upper@example.com');
+  });
+
+  it('surfaces the normalized mailSend config', () => {
+    const policy = Policy.fromDocument({
+      mailSend: { requireSameDomain: true, allowedDomains: ['@AretePartners.com', 'b.com', ''] },
+    });
+    expect(policy.summary().mailSend).toEqual({
+      requireSameDomain: true,
+      allowedDomains: ['aretepartners.com', 'b.com'],
+    });
+  });
+
+  it('defaults mailSend to same-domain-required when omitted (fail-safe)', () => {
+    expect(Policy.fromDocument({}).summary().mailSend).toEqual({
+      requireSameDomain: true,
+      allowedDomains: [],
+    });
+  });
+});
+
+describe('evaluateMailSend', () => {
+  const cfg = (over: Partial<typeof DEFAULT_MAIL_SEND_CONFIG> = {}) => ({
+    ...DEFAULT_MAIL_SEND_CONFIG,
+    ...over,
+  });
+
+  it('allows when sender and every recipient share the sender domain', () => {
+    const decision = evaluateMailSend(cfg(), {
+      senderUpn: 'me@arete.com',
+      recipients: ['a@arete.com', 'b@arete.com'],
+    });
+    expect(decision.allowed).toBe(true);
+  });
+
+  it('denies when any recipient is out of domain and names the offender', () => {
+    const decision = evaluateMailSend(cfg(), {
+      senderUpn: 'me@arete.com',
+      recipients: ['a@arete.com', 'x@gmail.com'],
+    });
+    expect(decision.allowed).toBe(false);
+    if (!decision.allowed) expect(decision.reason).toContain('x@gmail.com');
+  });
+
+  it('is case-insensitive on the domain comparison', () => {
+    const decision = evaluateMailSend(cfg(), {
+      senderUpn: 'Me@Arete.com',
+      recipients: ['Friend@ARETE.COM'],
+    });
+    expect(decision.allowed).toBe(true);
+  });
+
+  it('enforces allowedDomains: the shared domain must be on the list', () => {
+    const restricted = cfg({ allowedDomains: ['aretepartners.com'] });
+    expect(
+      evaluateMailSend(restricted, {
+        senderUpn: 'me@aretepartners.com',
+        recipients: ['a@aretepartners.com'],
+      }).allowed
+    ).toBe(true);
+    expect(
+      evaluateMailSend(restricted, {
+        senderUpn: 'me@other.com',
+        recipients: ['a@other.com'],
+      }).allowed
+    ).toBe(false);
+  });
+
+  it('denies when the sender UPN has no resolvable domain', () => {
+    expect(evaluateMailSend(cfg(), { senderUpn: null, recipients: ['a@arete.com'] }).allowed).toBe(
+      false
+    );
+    expect(
+      evaluateMailSend(cfg(), { senderUpn: 'bogus', recipients: ['a@arete.com'] }).allowed
+    ).toBe(false);
+  });
+
+  it('denies when there are no recipients to validate', () => {
+    expect(evaluateMailSend(cfg(), { senderUpn: 'me@arete.com', recipients: [] }).allowed).toBe(
+      false
+    );
+  });
+
+  it('treats a recipient with no domain as out of domain', () => {
+    expect(
+      evaluateMailSend(cfg(), { senderUpn: 'me@arete.com', recipients: ['malformed'] }).allowed
+    ).toBe(false);
+  });
+
+  it('short-circuits to allow when requireSameDomain is false', () => {
+    const decision = evaluateMailSend(cfg({ requireSameDomain: false }), {
+      senderUpn: 'me@arete.com',
+      recipients: ['anyone@elsewhere.com'],
+    });
+    expect(decision.allowed).toBe(true);
+  });
+});
+
+describe('Policy.checkMailSend', () => {
+  it('delegates to the configured mailSend block', () => {
+    const policy = Policy.fromDocument({
+      mailSend: { requireSameDomain: true, allowedDomains: ['aretepartners.com'] },
+    });
+    expect(
+      policy.checkMailSend({
+        senderUpn: 'me@aretepartners.com',
+        recipients: ['peer@aretepartners.com'],
+      }).allowed
+    ).toBe(true);
+    expect(
+      policy.checkMailSend({
+        senderUpn: 'me@aretepartners.com',
+        recipients: ['peer@external.com'],
+      }).allowed
+    ).toBe(false);
   });
 });
