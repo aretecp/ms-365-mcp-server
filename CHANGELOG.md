@@ -1,3 +1,9 @@
+## [2.7.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.6.0...v2.7.0) (2026-06-30)
+
+### New Features
+
+* **mail:** same-domain Mail.Send via mail-draft-send + mailSend policy ([08ce3fe](https://github.com/aretecp/ms-365-mcp-server/commit/08ce3fe09688da06d9efbd12911909a34cdbe435))
+
 ## [2.6.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.5.0...v2.6.0) (2026-06-01)
 
 ### New Features
