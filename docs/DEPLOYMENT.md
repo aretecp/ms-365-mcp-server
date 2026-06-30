@@ -136,13 +136,14 @@ module "m365_mcp" {
       { id = local.graph_delegated["profile"],         type = "Scope" },
       { id = local.graph_delegated["email"],           type = "Scope" },
 
-      # Mail — drafts only, no send. Mail.Send is deliberately omitted
-      # so the LLM can never send mail unilaterally. The send-draft-message
-      # tool does not exist on the server. Human reviews drafts in Outlook
-      # and clicks Send themselves. Tracked for future re-add (with
-      # approved-recipient guardrails) in ms-365-mcp-server#9.
+      # Mail. Mail.Send backs the mail-draft-send tool, which is gated by an
+      # in-code same-domain guard (sender + every recipient must share one
+      # allowed domain — see the mailSend policy block and the README
+      # "Same-domain Mail.Send" section). Cross-domain/external mail still
+      # goes through a human in Outlook.
       { id = local.graph_delegated["Mail.Read"],       type = "Scope" },
       { id = local.graph_delegated["Mail.ReadWrite"],  type = "Scope" },
+      { id = local.graph_delegated["Mail.Send"],       type = "Scope" },
 
       # Calendar
       { id = local.graph_delegated["Calendars.Read"],      type = "Scope" },
@@ -633,11 +634,14 @@ defaults:
 users:
   slyon@aretepartners.com:
     allow:
-      # Mail writes (drafts only — no send tool exists)
-      - create-draft-email
-      - update-mail-message
-      - add-mail-attachment
-      - delete-mail-message
+      # Mail writes
+      - mail-draft-create
+      - mail-message-update
+      - mail-attachment-add
+      - mail-message-delete
+      # Mail send — still subject to the mailSend same-domain guard below,
+      # so this only permits sending to recipients in an allowed domain.
+      - mail-draft-send
       # Calendar writes
       - create-calendar-event
       - update-calendar-event
@@ -649,6 +653,13 @@ users:
       - create-online-meeting
       - update-online-meeting
       - delete-online-meeting
+
+# Same-domain send guard for mail-draft-send. Even users allowed the tool can
+# only send when the sender + every recipient are in an allowed domain.
+mailSend:
+  requireSameDomain: true
+  allowedDomains:
+    - aretepartners.com
 ```
 
 Power user #2/#3 get the same block, scoped to whatever they actually need.

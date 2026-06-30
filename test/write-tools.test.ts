@@ -33,10 +33,16 @@ describe('write-tool registration', () => {
     expect(scopes).toContain('Calendars.ReadWrite');
   });
 
-  it('Mail.Send is NOT requested — drafts only, human sends from Outlook', () => {
+  it('Mail.Send IS requested and mail-draft-send carries the same-domain guard', () => {
     const scopes = resolveAuthScopes();
-    expect(scopes).not.toContain('Mail.Send');
-    expect(ALL_TOOLS.find((t) => t.name === 'send-draft-message')).toBeUndefined();
+    expect(scopes).toContain('Mail.Send');
+    const send = findTool('mail-draft-send');
+    expect(send).toBeDefined();
+    expect(send.method).toBe('POST');
+    expect(send.path).toBe('/me/messages/{message-id}/send');
+    // The send guard is enforced in code via a precondition, not just the
+    // description — without it, send would be unguarded.
+    expect(send.precondition).toBeDefined();
   });
 
   it('non-GET write tools surface destructiveHint via the McpServer registration', () => {
@@ -264,6 +270,128 @@ describe('write-tool runtime', () => {
       expect(graphRequest.mock.calls).toHaveLength(1);
     });
   }
+});
+
+describe('mail-draft-send same-domain guard', () => {
+  const recipient = (address: string) => ({ emailAddress: { address } });
+
+  // Mock that answers the precondition probe with a configurable draft and
+  // succeeds the actual /send POST.
+  function makeMock(draft: Record<string, unknown>) {
+    const graphRequest = vi.fn().mockImplementation((path: string) => {
+      if (path.includes('$select=isDraft')) return Promise.resolve(draft);
+      return Promise.resolve({ content: [{ type: 'text', text: '' }] });
+    });
+    return { graphRequest, client: { graphRequest } as unknown as GraphClient };
+  }
+
+  const sendCall = (graphRequest: ReturnType<typeof vi.fn>) =>
+    graphRequest.mock.calls.find(([p]: [string]) => p.endsWith('/send')) as
+      | [string, { method: string }]
+      | undefined;
+
+  function run(upn: string | null, client: GraphClient, policy?: Policy, messageId = 'draft-1') {
+    return requestContext.run(
+      { accessToken: 'at', userOid: 'oid', tenantId: 't', userPrincipalName: upn },
+      () => executeTool(findTool('mail-draft-send'), client, { 'message-id': messageId }, policy)
+    );
+  }
+
+  const sameDomainPolicy = () =>
+    Policy.fromDocument({
+      defaults: { allow: ['mail-draft-send'] },
+      mailSend: { requireSameDomain: true, allowedDomains: ['aretepartners.com'] },
+    });
+
+  it('sends when the sender and every recipient share the allowed domain', async () => {
+    const { graphRequest, client } = makeMock({
+      isDraft: true,
+      toRecipients: [recipient('alice@aretepartners.com')],
+      ccRecipients: [recipient('bob@aretepartners.com')],
+    });
+    const result = await run('me@aretepartners.com', client, sameDomainPolicy());
+
+    expect(result.isError).toBeFalsy();
+    const call = sendCall(graphRequest)!;
+    expect(call[0]).toBe('/me/messages/draft-1/send');
+    expect(call[1].method).toBe('POST');
+  });
+
+  it('refuses (and never POSTs) when any recipient is out of domain', async () => {
+    const { graphRequest, client } = makeMock({
+      isDraft: true,
+      toRecipients: [recipient('alice@aretepartners.com')],
+      bccRecipients: [recipient('outsider@gmail.com')],
+    });
+    const result = await run('me@aretepartners.com', client, sameDomainPolicy());
+
+    expect(result.isError).toBe(true);
+    const payload = JSON.parse((result.content[0] as { text: string }).text);
+    expect(payload.error).toMatch(/precondition failed/i);
+    expect(payload.error).toMatch(/outsider@gmail\.com/);
+    expect(sendCall(graphRequest)).toBeUndefined();
+  });
+
+  it('refuses when the sender domain is not in allowedDomains, even if internal-consistent', async () => {
+    const { graphRequest, client } = makeMock({
+      isDraft: true,
+      toRecipients: [recipient('alice@other.com')],
+    });
+    const result = await run('me@other.com', client, sameDomainPolicy());
+
+    expect(result.isError).toBe(true);
+    const payload = JSON.parse((result.content[0] as { text: string }).text);
+    expect(payload.error).toMatch(/not in the policy's allowed send domains/i);
+    expect(sendCall(graphRequest)).toBeUndefined();
+  });
+
+  it('refuses when the message is not a draft and never POSTs', async () => {
+    const { graphRequest, client } = makeMock({
+      isDraft: false,
+      toRecipients: [recipient('alice@aretepartners.com')],
+    });
+    const result = await run('me@aretepartners.com', client, sameDomainPolicy());
+
+    expect(result.isError).toBe(true);
+    const payload = JSON.parse((result.content[0] as { text: string }).text);
+    expect(payload.error).toMatch(/not a draft/i);
+    expect(sendCall(graphRequest)).toBeUndefined();
+  });
+
+  it('falls back to the fail-safe same-domain default when no policy is configured', async () => {
+    const internal = makeMock({
+      isDraft: true,
+      toRecipients: [recipient('peer@example.com')],
+    });
+    const okResult = await run('me@example.com', internal.client);
+    expect(okResult.isError).toBeFalsy();
+    expect(sendCall(internal.graphRequest)).toBeDefined();
+
+    const external = makeMock({
+      isDraft: true,
+      toRecipients: [recipient('peer@elsewhere.com')],
+    });
+    const denied = await run('me@example.com', external.client);
+    expect(denied.isError).toBe(true);
+    expect(sendCall(external.graphRequest)).toBeUndefined();
+  });
+
+  it('respects the policy gate: a user without mail-draft-send is denied before the guard runs', async () => {
+    const policy = Policy.fromDocument({
+      defaults: { allow: [] },
+      mailSend: { requireSameDomain: true, allowedDomains: ['aretepartners.com'] },
+    });
+    const { graphRequest, client } = makeMock({
+      isDraft: true,
+      toRecipients: [recipient('alice@aretepartners.com')],
+    });
+    const result = await run('me@aretepartners.com', client, policy);
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Policy denied');
+    // Denied by policy before the precondition probe — no Graph call at all.
+    expect(graphRequest).not.toHaveBeenCalled();
+  });
 });
 
 describe('policy gating on write tools', () => {

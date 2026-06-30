@@ -1,6 +1,20 @@
 import { z } from 'zod';
 import type GraphClient from '../graph-client.js';
 import type { ResourceKind } from './projections.js';
+import type { PolicyChecker } from '../policy/index.js';
+
+/**
+ * Side-channel passed to a {@link ToolPrecondition} alongside the Graph client
+ * and params. Carries the active policy and the authenticated caller so guards
+ * can make policy-aware decisions (e.g. the same-domain send check) without the
+ * runtime hard-coding tool names.
+ */
+export interface PreconditionContext {
+  /** Active per-call policy, if one is configured. */
+  policy?: PolicyChecker;
+  /** Authenticated caller's UPN (the sender), or null when unknown. */
+  userPrincipalName: string | null;
+}
 
 /**
  * Where a {@link ToolParam} value goes in the outbound Graph request.
@@ -25,7 +39,8 @@ export type Toolset = 'mail' | 'calendar' | 'files' | 'directory' | 'teams' | 's
  */
 export type ToolPrecondition = (
   graphClient: GraphClient,
-  params: Record<string, unknown>
+  params: Record<string, unknown>,
+  ctx: PreconditionContext
 ) => Promise<void>;
 
 /**

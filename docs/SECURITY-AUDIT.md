@@ -43,12 +43,22 @@ These are documented for completeness; no new issues filed.
 
 ### `create-draft-email`
 
-- **Tool description**: "Create a draft email in the signed-in user's Drafts folder. Returns the new message including its id. The draft sits in Drafts until the human opens Outlook and clicks Send — this server has no send capability."
+- **Tool description**: "Create a draft email in the signed-in user's Drafts folder. Returns the new message including its id. The draft stays in Drafts until it is either sent with mail-draft-send (same-domain only) or reviewed and sent by the human in Outlook."
 - **Graph endpoint**: `POST /me/messages`
 - **Required scope**: `Mail.ReadWrite`
-- **Graph layer accepts**: any draft Message payload in the caller's mailbox. `Mail.Send` is deliberately not in the Entra app's granted scopes, so the server has no way to send. There is no message-id to constrain at create time.
-- **No gap**: the endpoint creates a new resource in the user's own mailbox; the `Mail.Send` exclusion at the Entra layer means the draft can't leave the Drafts folder without human action in Outlook. Recipient-allowlist guardrails for a future send capability are tracked separately.
-- **Tracked in**: [#9](https://github.com/aretecp/ms-365-mcp-server/issues/9) (future send-capability guardrails — not a gap in the current draft-only posture).
+- **Graph layer accepts**: any draft Message payload in the caller's mailbox. There is no message-id to constrain at create time; creating a draft does not send it.
+- **No gap**: the endpoint creates a new resource in the user's own mailbox. Sending is a separate, guarded action (`mail-draft-send`, below) — drafting alone cannot put mail on the wire.
+- **Tracked in**: [#9](https://github.com/aretecp/ms-365-mcp-server/issues/9) (send-capability guardrails — now implemented as the `mail-draft-send` same-domain guard).
+
+### `mail-draft-send`
+
+- **Tool description**: "Send an existing draft message by id ... refuses unless (a) the message is a draft and (b) the sender and EVERY recipient are in the same email domain, per the mailSend policy."
+- **Graph endpoint**: `POST /me/messages/{message-id}/send`
+- **Required scope**: `Mail.Send`
+- **Graph layer accepts**: a send of any draft in the caller's mailbox to any recipients — Graph itself imposes no domain restriction.
+- **Guardrail (in code)**: `assertSendWithinDomain` precondition runs before the Graph call. It GETs the draft's `isDraft` + to/cc/bcc, refuses non-drafts, and applies `Policy.checkMailSend` (the `mailSend` policy block): the sender and every recipient must share one domain, restricted to `allowedDomains` when configured. Denial returns a structured precondition error and the `/send` POST never fires. Two layers gate the tool: the per-user allow/deny policy (who may call it) and this domain guard (which sends are permitted).
+- **Residual risk**: send is limited to same-domain recipients; cross-domain/external mail still requires a human in Outlook. A misconfigured `mailSend.requireSameDomain: false` lifts the domain restriction, so that switch is the control to audit.
+- **Tracked in**: [#9](https://github.com/aretecp/ms-365-mcp-server/issues/9).
 
 ### `update-mail-message`
 
