@@ -80,12 +80,12 @@ Clients that don't perform DCR (Claude.ai today) keep working via the legacy `MS
 
 ### Same-domain Mail.Send
 
-The server can draft, update, attach to, delete, and **send** mail. Send is exposed through a single tool, `mail-draft-send` (`POST /me/messages/{id}/send`, scope `Mail.Send`), and is wrapped in a same-domain guard enforced **in code** before anything reaches Graph: the send is refused unless
+The server can draft, update, attach to, delete, and **send** mail. Send is exposed through two tools, both scope `Mail.Send` and both wrapped in the same same-domain guard enforced **in code** before anything reaches Graph:
 
-1. the message is a draft (`isDraft=true`), and
-2. the sender and **every** recipient (to/cc/bcc) are in the same email domain.
+- `mail-draft-send` (`POST /me/messages/{id}/send`) — send an existing draft after review. Refused unless the message is a draft (`isDraft=true`) **and** the sender and **every** recipient (to/cc/bcc) are in the same email domain.
+- `mail-send` (`POST /me/sendMail`) — send a message in one step, no draft. Refused unless the message has recipients **and** the sender and **every** recipient (to/cc/bcc) are in the same email domain. This skips human-in-Outlook review, so it pairs well with an out-of-band confirmation step (a `request_human_input` tool or an MCP elicitation request) before the model calls it.
 
-Two independent controls gate it. The per-user **policy** decides _who_ may call `mail-draft-send` at all (it is off `defaults.allow` like every other write tool, so a UPN must be granted it explicitly). The **`mailSend` policy block** then decides _which_ domains may send to themselves:
+Two independent controls gate both. The per-user **policy** decides _who_ may call `mail-draft-send` / `mail-send` at all (they are off `defaults.allow` like every other write tool, so a UPN must be granted them explicitly). The **`mailSend` policy block** then decides _which_ domains may send to themselves:
 
 ```yaml
 mailSend:
@@ -94,7 +94,7 @@ mailSend:
     - aretepartners.com
 ```
 
-So with the example policy, `me@aretepartners.com` can send to other `@aretepartners.com` recipients, but a draft addressed to any external recipient — or a sender outside `aretepartners.com` — is rejected. Admins tune this live via the admin UI (`/admin/policy`) or on disk + SIGHUP; the same-domain summary is shown on the dashboard. Set `requireSameDomain: false` to lift the domain restriction entirely (the per-user allow/deny gate still applies).
+So with the example policy, `me@aretepartners.com` can send to other `@aretepartners.com` recipients, but a message addressed to any external recipient — or a sender outside `aretepartners.com` — is rejected. Admins tune this live via the admin UI (`/admin/policy`) or on disk + SIGHUP; the same-domain summary is shown on the dashboard. Set `requireSameDomain: false` to lift the domain restriction entirely (the per-user allow/deny gate still applies).
 
 The guard is a `Tool.precondition` (see [Server-enforced invariants](#server-enforced-invariants)) — it is enforced in the runtime, not by the tool description, so the model cannot talk its way past it. Cross-domain or external mail still goes through a human in Outlook. This closes out the approved-domain allow-list contemplated in [issue #9](https://github.com/aretecp/ms-365-mcp-server/issues/9).
 
@@ -106,14 +106,15 @@ Mechanism: `Tool.precondition` in `src/tools/types.ts`. Before executing a tool,
 
 Current preconditions:
 
-| Tool                    | Invariant                                                      | Implementation                                                                                    |
-| ----------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `mail-message-update`   | message must satisfy `isDraft=true`                            | `assertIsDraft` — GET `/me/messages/{id}?$select=isDraft`, refuse if not a draft                  |
-| `mail-attachment-add`   | message must satisfy `isDraft=true`                            | same                                                                                              |
-| `mail-message-delete`   | message must satisfy `isDraft=true`                            | same — model cannot mass-delete received mail                                                     |
-| `mail-draft-send`       | draft + sender and all recipients in the same (allowed) domain | `assertSendWithinDomain` — GET recipients, refuse cross-domain/external per the `mailSend` policy |
-| `calendar-event-update` | event must satisfy `isOrganizer=true`                          | `assertIsOrganizer` — GET `/me/events/{id}?$select=isOrganizer`, refuse if not organizer          |
-| `calendar-event-delete` | event must satisfy `isOrganizer=true`                          | same                                                                                              |
+| Tool                    | Invariant                                                                   | Implementation                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `mail-message-update`   | message must satisfy `isDraft=true`                                         | `assertIsDraft` — GET `/me/messages/{id}?$select=isDraft`, refuse if not a draft                                               |
+| `mail-attachment-add`   | message must satisfy `isDraft=true`                                         | same                                                                                                                           |
+| `mail-message-delete`   | message must satisfy `isDraft=true`                                         | same — model cannot mass-delete received mail                                                                                  |
+| `mail-draft-send`       | draft + sender and all recipients in the same (allowed) domain              | `assertSendWithinDomain` — GET recipients, refuse cross-domain/external per the `mailSend` policy                              |
+| `mail-send`             | recipients present + sender and all recipients in the same (allowed) domain | `assertDirectSendWithinDomain` — read recipients from the request body, refuse cross-domain/external per the `mailSend` policy |
+| `calendar-event-update` | event must satisfy `isOrganizer=true`                                       | `assertIsOrganizer` — GET `/me/events/{id}?$select=isOrganizer`, refuse if not organizer                                       |
+| `calendar-event-delete` | event must satisfy `isOrganizer=true`                                       | same                                                                                                                           |
 
 `Mail.ReadWrite` at the Graph layer is broader than what we want to expose. Without `assertIsDraft`, the LLM could PATCH any message (mark as read, flag, recategorize), DELETE any message (clear an inbox), or attach files to received mail. The precondition closes that gap.
 

@@ -4,7 +4,7 @@
 #   defaults.allow:        list of tools every authenticated user may call
 #   users.<upn>.allow:     extra tools allowed for a specific Entra user
 #   users.<upn>.deny:      tools explicitly denied for a specific user (wins over allow)
-#   mailSend:              same-domain guard for the mail-draft-send tool (see below)
+#   mailSend:              same-domain guard for the mail send tools (mail-draft-send, mail-send; see below)
 #
 # Precedence: user.deny > user.allow > defaults.allow > default-deny.
 # Unknown users fall through to defaults.allow.
@@ -71,12 +71,13 @@ defaults:
     - download-bytes
     - parse-teams-url
 
-# Same-domain send guard for the mail-draft-send tool.
+# Same-domain send guard for the mail send tools.
 #
-# mail-draft-send is the ONLY tool that can put mail on the wire (POST
-# /me/messages/{id}/send, scope Mail.Send). On top of the normal allow/deny
-# gate, the server enforces this guard IN CODE before the send reaches Graph:
-# the sender and EVERY recipient (to/cc/bcc) must share one email domain.
+# Two tools can put mail on the wire (scope Mail.Send): mail-draft-send (POST
+# /me/messages/{id}/send) and mail-send (POST /me/sendMail, direct send with no
+# draft). On top of the normal allow/deny gate, the server enforces this guard
+# IN CODE before either send reaches Graph: the sender and EVERY recipient
+# (to/cc/bcc) must share one email domain.
 #
 #   requireSameDomain:  master switch. Default true (and assumed true if this
 #                       block is omitted). Set false to disable the guard and
@@ -100,10 +101,12 @@ mailSend:
 #       - mail-message-update
 #       - mail-attachment-add
 #       - mail-message-delete
-#       # Mail send. Even with this allow, the mailSend same-domain guard above
-#       # still applies: the sender + every recipient must be in an allowed
-#       # domain or the send is refused in code.
+#       # Mail send (review-in-Outlook draft send, and direct one-step send).
+#       # Even with these allows, the mailSend same-domain guard above still
+#       # applies: the sender + every recipient must be in an allowed domain or
+#       # the send is refused in code.
 #       - mail-draft-send
+#       - mail-send
 #       # Calendar writes
 #       - calendar-event-create
 #       - calendar-event-update
