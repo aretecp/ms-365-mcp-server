@@ -1,3 +1,9 @@
+## [2.8.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.7.0...v2.8.0) (2026-07-01)
+
+### New Features
+
+* **mail:** add mail-send for direct one-step send (same-domain guarded) ([685a3b2](https://github.com/aretecp/ms-365-mcp-server/commit/685a3b2a06fdc054e51e2e3eee3a2598add6cdec))
+
 ## [2.7.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.6.0...v2.7.0) (2026-06-30)
 
 ### New Features
