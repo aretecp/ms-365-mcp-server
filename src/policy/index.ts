@@ -418,8 +418,11 @@ export class PolicyManager implements PolicyChecker {
       if (this.queued) {
         this.queued = false;
         // Fire-and-forget the follow-up; awaiting it would deadlock callers
-        // that were waiting on the original `pending` resolution.
-        void this.reload();
+        // that were waiting on the original `pending` resolution. Swallow the
+        // rejection — runReload already logged it and there is no caller to
+        // hand it to; leaving it unhandled would crash the process on a policy
+        // typo, the exact outage this class is written to avoid.
+        void this.reload().catch(() => {});
       }
     }
   }

@@ -86,6 +86,32 @@ describe('PolicyManager', () => {
     expect(runReloadSpy.mock.calls.length).toBe(2);
   });
 
+  it('a failing coalesced follow-up reload does not raise an unhandled rejection', async () => {
+    const mgr = PolicyManager.fromFile(filePath);
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+
+    try {
+      // Two overlapping reloads => one queued follow-up, which reads a broken file.
+      const a = mgr.reload();
+      const b = mgr.reload();
+      fs.writeFileSync(filePath, 'defaults: { allow: [identity-get-me\n');
+      await Promise.all([a, b]);
+      // Let the follow-up run and its rejection settle.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+
+    expect(unhandled).toEqual([]);
+    // Previous policy stays active despite the failed follow-up.
+    expect(mgr.check({ userPrincipalName: null, toolName: 'identity-get-me' })).toBe(true);
+  });
+
   it('source() returns the file path the policy was loaded from', () => {
     const mgr = PolicyManager.fromFile(filePath);
     expect(mgr.source()).toBe(filePath);
