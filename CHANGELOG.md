@@ -1,3 +1,9 @@
+## [2.8.1](https://github.com/aretecp/ms-365-mcp-server/compare/v2.8.0...v2.8.1) (2026-07-30)
+
+### Bug Fixes
+
+* **policy:** don't crash the process when a coalesced policy reload fails ([a611709](https://github.com/aretecp/ms-365-mcp-server/commit/a611709f47eb2638810bd3e337cc6cae507accde))
+
 ## [2.8.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.7.0...v2.8.0) (2026-07-01)
 
 ### New Features
