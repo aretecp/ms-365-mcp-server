@@ -63,10 +63,11 @@ jobs:
             REPO_DIR="$HOME/ms-365-mcp-server"
 
             # First-time clone guard — do not clobber existing prod checkout.
-            # Unlike areteos we use the same dir for prod and dev checkouts
-            # because dev deploys checkout the develop branch while prod
-            # deploys a tag. The compose files use different container names
-            # and data dirs so the two co-exist on the same VPS.
+            # Same dir for prod and dev checkouts, as in areteos / areteos-py /
+            # arilearn-phx. That means one compose project for both stacks, so
+            # co-existence rests on the dev compose file using `-dev`-suffixed
+            # SERVICE KEYS (not just container names — compose keys containers
+            # by project+service). See docker-compose.dev.yml.
             if [ ! -d "$REPO_DIR/.git" ]; then
               echo "Cloning ms-365-mcp-server into $REPO_DIR (first-time dev setup)..."
               git clone https://github.com/aretecp/ms-365-mcp-server.git "$REPO_DIR"
