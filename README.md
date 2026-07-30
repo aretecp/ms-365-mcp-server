@@ -4,6 +4,8 @@ Self-hosted [Model Context Protocol](https://modelcontextprotocol.io) server tha
 
 Originally forked from [Softeria/ms-365-mcp-server](https://github.com/Softeria/ms-365-mcp-server) and rewritten for our deployment model. Areté now owns this codebase; upstream is a reference, not a dependency.
 
+Hosted on VPS
+
 ## Status
 
 Hand-written tool surface. Currently exposing:
