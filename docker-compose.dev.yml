@@ -1,16 +1,22 @@
 # Dev Docker Compose for the M365 MCP Server.
 #
-# Co-resident with the prod stack on the shared VPS:
-#   - Different container name (`m365_mcp_dev`) so it doesn't collide.
+# Co-resident with the prod stack on the shared VPS. Both stacks live in the
+# same checkout, so compose derives the same project name for both — which
+# means the SERVICE KEY is what keeps them apart. Compose identifies a
+# container by project+service, not by `container_name`; two files sharing the
+# service key `m365-mcp` would make each deploy adopt and recreate the other's
+# container. Hence the `-dev` suffix here, matching areteos / areteos-py /
+# arilearn-phx.
+#   - Different service key (`m365-mcp-dev`) — the actual isolation boundary.
+#   - Different container name (`m365_mcp_dev`).
 #   - Different Traefik router (`m365-mcp-dev`) with the dev hostname.
-#   - Different `data/` and `policy/` directories so dev sessions and dev
-#     policy never bleed into prod.
+#   - Different volumes so dev sessions and dev policy never bleed into prod.
 #
 # Triggered from `.github/workflows/deploy-dev.yml` on push to `develop`,
 # or via workflow_dispatch.
 
 services:
-  m365-mcp:
+  m365-mcp-dev:
     build:
       context: .
       dockerfile: Dockerfile
