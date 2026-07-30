@@ -1,3 +1,9 @@
+## [2.8.2](https://github.com/aretecp/ms-365-mcp-server/compare/v2.8.1...v2.8.2) (2026-07-30)
+
+### Bug Fixes
+
+* **deploy:** give the dev compose stack its own service key ([200b3ab](https://github.com/aretecp/ms-365-mcp-server/commit/200b3ab6530a58fb9dd64c1a892ffeb1db9ae1bd))
+
 ## [2.8.1](https://github.com/aretecp/ms-365-mcp-server/compare/v2.8.0...v2.8.1) (2026-07-30)
 
 ### Bug Fixes
