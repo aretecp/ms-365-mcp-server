@@ -1,7 +1,7 @@
 name: Release
 
 # Thin shim. Logic lives in aretecp/github-actions/.github/workflows/release-shared.yml.
-# Bump the @v1 ref there to pick up patch/minor fixes automatically.
+# Bump the @v2 ref there to pick up patch/minor fixes automatically.
 
 on:
   push:
@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   release:
-    uses: aretecp/github-actions/.github/workflows/release-shared.yml@v1
+    uses: aretecp/github-actions/.github/workflows/release-shared.yml@v2
     with:
       major: ${{ inputs.major || false }}
     secrets: inherit
