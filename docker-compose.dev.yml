@@ -28,7 +28,11 @@ services:
 
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.m365-mcp-dev.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.dev.areteintelligence.ai}`)"
+      # Dual-homed during the lumistlabs.dev cutover. The wildcard
+      # *.lumistlabs.dev matches one label only, so the new name is the
+      # flattened `m365-mcp.` form, not `m365.mcp.`. Drop the legacy host in a
+      # later pass once nothing references it.
+      - "traefik.http.routers.m365-mcp-dev.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.dev.areteintelligence.ai}`) || Host(`m365-mcp.lumistlabs.dev`)"
       - "traefik.http.routers.m365-mcp-dev.entrypoints=websecure"
       - "traefik.http.routers.m365-mcp-dev.tls=true"
       - "traefik.http.routers.m365-mcp-dev.tls.certresolver=letsencrypt"
