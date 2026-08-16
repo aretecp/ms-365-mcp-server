@@ -21,8 +21,8 @@ jobs:
       id-token: write
     steps:
       # Load shared infra secrets FIRST so per-project keys from /m365-mcp
-      # (loaded next) can override any collisions with arete-shared subfolders
-      # (e.g. arete-shared/terraform/entra/MICROSOFT_* would otherwise shadow
+      # (loaded next) can override any collisions with lumist-labs-shared subfolders
+      # (e.g. lumist-labs-shared/terraform/entra/MICROSOFT_* would otherwise shadow
       # this app's own Entra client credentials).
       - name: Load shared infra secrets from Infisical (OIDC)
         uses: aretecp/github-actions/actions/load-infisical-secrets@v1

@@ -564,7 +564,7 @@ Traefik discovers the service on `aichat_openwebui-network`, fetches a Let's Enc
 GitHub Actions deploys load secrets two ways:
 
 1. **App-specific secrets** at `/m365-mcp/` in the **internal** Infisical project — pulled via the `load-infisical-secrets@v1` shared action using **OIDC** (no static credentials).
-2. **Shared infra secrets** at `/` recursive in the `arete-shared` Infisical project — provides `TAILSCALE_AUTHKEY`, `VPS_TAILSCALE_IP`, `VPS_SSH_KEY` (these never appear in this repo).
+2. **Shared infra secrets** at `/` recursive in the `lumist-labs-shared` Infisical project — provides `TAILSCALE_AUTHKEY`, `VPS_TAILSCALE_IP`, `VPS_SSH_KEY` (these never appear in this repo).
 
 The runner SSH's to the VPS over the Tailnet, writes a `chmod 600 .env` file on the VPS, then `docker compose --env-file .env -f docker-compose.prod.yml up -d --build`. The `${MICROSOFT_CLIENT_ID:?...}` interpolation in the compose file fails loudly if any required key is missing — belt-and-suspenders against partial Infisical contents.
 
@@ -834,7 +834,7 @@ Minimal viable monitoring:
 | `policy.saved` log line followed by 500s on `/mcp`                       | Bad YAML accepted but tool reference invalid.                                                                    | The policy validator caught it before save — re-check the YAML; the previous policy stays live until the next successful save. |
 | Tool call returns 429 with no retry                                      | No throttling/backoff yet.                                                                                       | Tracked in [issue #8](https://github.com/aretecp/issues/8); ride it out and back off client-side for now.                      |
 | `deploy-prod.yml` fails with "REPO_DIR does not exist"                   | Prod refuses to clone — the first deploy is manual (§7.5).                                                       | Bootstrap the prod checkout once by hand, then re-run the workflow.                                                            |
-| Tailscale step fails with "node already exists"                          | Stale auth key reuse.                                                                                            | Rotate the auth key in `arete-shared` Infisical (`TAILSCALE_AUTHKEY`).                                                         |
+| Tailscale step fails with "node already exists"                          | Stale auth key reuse.                                                                                            | Rotate the auth key in `lumist-labs-shared` Infisical (`TAILSCALE_AUTHKEY`).                                                   |
 | Workflow can't read Infisical secrets                                    | OIDC identity not bound to this repo.                                                                            | Confirm `vars.INFISICAL_OIDC_IDENTITY_ID` matches the identity that has access to `/m365-mcp` in the internal project.         |
 
 ---
