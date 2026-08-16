@@ -28,15 +28,29 @@ services:
 
     labels:
       - "traefik.enable=true"
-      # Dual-homed during the lumistlabs.dev cutover. The wildcard
-      # *.lumistlabs.dev matches one label only, so the new name is the
-      # flattened `m365-mcp.` form, not `m365.mcp.`. Drop the legacy host in a
-      # later pass once nothing references it.
-      - "traefik.http.routers.m365-mcp-dev.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.dev.areteintelligence.ai}`) || Host(`m365-mcp.lumistlabs.dev`)"
+      # Dual-homed during the lumistlabs.dev cutover, but as TWO routers over one
+      # backend rather than a single router with `||`. Traefik issues one
+      # certificate per router, covering every Host() in that router's rule, so
+      # combining the names would put both on one cert -- and the legacy name no
+      # longer resolves (its records went away when DNS moved off Route 53), so
+      # it can never pass an HTTP-01 challenge again. Sharing a cert, its failed
+      # renewal would take the live lumistlabs.dev name down with it. Split, the
+      # failure stays contained to a hostname nothing can reach anyway.
+      # Remove the legacy router once the cutover has merged all the way up.
+      - "traefik.http.routers.m365-mcp-dev.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.dev.areteintelligence.ai}`)"
       - "traefik.http.routers.m365-mcp-dev.entrypoints=websecure"
       - "traefik.http.routers.m365-mcp-dev.tls=true"
       - "traefik.http.routers.m365-mcp-dev.tls.certresolver=letsencrypt"
       - "traefik.http.routers.m365-mcp-dev.middlewares=security-headers@file,rate-limit@file"
+      - "traefik.http.routers.m365-mcp-dev.service=m365-mcp-dev"
+      # The wildcard *.lumistlabs.dev matches exactly one label, so this is the
+      # flattened `m365-mcp.` form -- `m365.mcp.` would never match it.
+      - "traefik.http.routers.m365-mcp-dev-lumist.rule=Host(`m365-mcp.lumistlabs.dev`)"
+      - "traefik.http.routers.m365-mcp-dev-lumist.entrypoints=websecure"
+      - "traefik.http.routers.m365-mcp-dev-lumist.tls=true"
+      - "traefik.http.routers.m365-mcp-dev-lumist.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.m365-mcp-dev-lumist.middlewares=security-headers@file,rate-limit@file"
+      - "traefik.http.routers.m365-mcp-dev-lumist.service=m365-mcp-dev"
       - "traefik.http.services.m365-mcp-dev.loadbalancer.server.port=3000"
       - "traefik.docker.network=aichat_openwebui-network"
 
