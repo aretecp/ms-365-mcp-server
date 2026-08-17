@@ -1,3 +1,10 @@
+## [2.8.3](https://github.com/aretecp/ms-365-mcp-server/compare/v2.8.2...v2.8.3) (2026-08-17)
+
+### Bug Fixes
+
+* **deploy:** scope the shared Infisical load to /tailscale ([#39](https://github.com/aretecp/ms-365-mcp-server/issues/39)) ([01575f8](https://github.com/aretecp/ms-365-mcp-server/commit/01575f89b7c0c8f531388eba59cbbce0476ac640))
+* **oauth:** advertise m365-mcp.lumistlabs.dev as the dev public hostname ([#41](https://github.com/aretecp/ms-365-mcp-server/issues/41)) ([391ff46](https://github.com/aretecp/ms-365-mcp-server/commit/391ff46c785a993528394c6225bdef19ae13ecb6))
+
 ## [2.8.2](https://github.com/aretecp/ms-365-mcp-server/compare/v2.8.1...v2.8.2) (2026-07-30)
 
 ### Bug Fixes
