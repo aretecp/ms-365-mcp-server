@@ -86,7 +86,7 @@ jobs:
             MICROSOFT_TENANT_ID=${{ env.MICROSOFT_TENANT_ID }}
             MS365_MCP_SESSION_KEY=${{ env.MS365_MCP_SESSION_KEY }}
             MS365_MCP_POLICY_ADMINS=${{ env.MS365_MCP_POLICY_ADMINS }}
-            PUBLIC_HOSTNAME=m365.mcp.dev.areteintelligence.ai
+            PUBLIC_HOSTNAME=m365-mcp.lumistlabs.dev
             ENVIRONMENT=development
             ENVEOF
             chmod 600 .env.dev
