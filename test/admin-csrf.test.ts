@@ -30,6 +30,15 @@ describe('admin CSRF tokens', () => {
     expect(verifyCsrfToken('session-abc', undefined)).toBe(false);
   });
 
+  it('rejects a right-length token that is not valid hex, without throwing', () => {
+    // Hex-decoding these yields a short/empty buffer; a naive timingSafeEqual
+    // on the decoded bytes throws RangeError instead of returning false.
+    expect(verifyCsrfToken('session-abc', 'z'.repeat(64))).toBe(false);
+    expect(verifyCsrfToken('session-abc', `${'a'.repeat(62)}zz`)).toBe(false);
+    // Multi-byte chars: same char length, different byte length.
+    expect(verifyCsrfToken('session-abc', `${'é'.repeat(32)}${'a'.repeat(32)}`)).toBe(false);
+  });
+
   it('rejects a token of the wrong length even if it is valid hex', () => {
     expect(verifyCsrfToken('session-abc', 'deadbeef')).toBe(false);
   });
