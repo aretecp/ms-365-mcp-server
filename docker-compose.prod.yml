@@ -27,37 +27,27 @@ services:
     # No published ports — Traefik discovers the service over the shared network.
     labels:
       - 'traefik.enable=true'
-      - 'traefik.http.routers.m365-mcp.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.areteintelligence.ai}`)'
+      - 'traefik.http.routers.m365-mcp.rule=Host(`${PUBLIC_HOSTNAME:-m365-mcp.lumistlabs.ai}`)'
       - 'traefik.http.routers.m365-mcp.entrypoints=websecure'
       - 'traefik.http.routers.m365-mcp.tls=true'
       - 'traefik.http.routers.m365-mcp.tls.certresolver=letsencrypt'
       - 'traefik.http.routers.m365-mcp.middlewares=security-headers@file,rate-limit@file'
       - 'traefik.http.routers.m365-mcp.service=m365-mcp'
-      # Second router for the Lumist hostname, NOT `Host(a) || Host(b)`.
-      # Traefik issues one certificate per router covering every Host() in its
-      # rule; the legacy name goes dark when the prod DNS records are retired,
-      # and a dark name can never pass HTTP-01 again. On a shared certificate
-      # its failed renewal would take the live hostname with it.
+      # Cutover done: PUBLIC_HOSTNAME is now m365-mcp.lumistlabs.ai, so the
+      # router above already serves the new name and MS365_MCP_PUBLIC_URL below
+      # advertises it as the OAuth issuer. Both derive from the same variable,
+      # which is what keeps the discovery document internally consistent — the
+      # split-brain fixed on dev came from those two drifting apart.
       #
-      # IMPORTANT — this makes the new name SERVE, but not authenticate.
-      # MS365_MCP_PUBLIC_URL below still derives from PUBLIC_HOSTNAME, so the
-      # OAuth discovery document keeps advertising the legacy issuer while the
-      # token and register endpoints are derived from the request Host. That is
-      # the same split-brain that had to be fixed on dev.
+      # The separate m365-mcp-lumist router that used to sit here is gone: it
+      # was built for the new hostname, and with PUBLIC_HOSTNAME flipped it
+      # would have produced two routers with identical rules.
       #
-      # Flipping PUBLIC_HOSTNAME to m365-mcp.lumistlabs.ai is the actual
-      # cutover, and it is deliberately NOT done here: it breaks any prod MCP
-      # connector still pointed at the legacy URL until each is repointed and
-      # re-authorised. The Entra redirect URIs for the new hostname are already
-      # registered, so the flip is a one-variable change whenever you choose.
-      # Delete this router when you do — it is built from PUBLIC_HOSTNAME, so
-      # leaving it would produce two routers with identical rules.
-      - 'traefik.http.routers.m365-mcp-lumist.rule=Host(`m365-mcp.lumistlabs.ai`)'
-      - 'traefik.http.routers.m365-mcp-lumist.entrypoints=websecure'
-      - 'traefik.http.routers.m365-mcp-lumist.tls=true'
-      - 'traefik.http.routers.m365-mcp-lumist.tls.certresolver=letsencrypt'
-      - 'traefik.http.routers.m365-mcp-lumist.middlewares=security-headers@file,rate-limit@file'
-      - 'traefik.http.routers.m365-mcp-lumist.service=m365-mcp'
+      # The legacy m365.mcp.areteintelligence.ai is no longer served. Its DNS
+      # record still resolves, so it can be re-added as its own second router
+      # if a straggling client needs it — but never by folding it into the rule
+      # above, which would put both names on one certificate and tie their
+      # renewals together.
       - 'traefik.http.services.m365-mcp.loadbalancer.server.port=3000'
       - 'traefik.docker.network=aichat_openwebui-network'
 
@@ -75,10 +65,12 @@ services:
 
       # Public URL — fixed for the prod deploy. The OAuth broker advertises this
       # as the issuer and builds its single Microsoft callback from it:
-      #   https://m365.mcp.areteintelligence.ai/auth/callback
+      #   https://m365-mcp.lumistlabs.ai/auth/callback
+      # That URI is already registered in the Entra app (apps/m365_mcp/main.tf
+      # in microsoft-entra-terraform-infrastructure), alongside the legacy one.
       # That ONE redirect URI is all the Entra app needs registered, no matter
       # how many MCP clients connect (they obtain their own client_id via DCR).
-      MS365_MCP_PUBLIC_URL: 'https://${PUBLIC_HOSTNAME:-m365.mcp.areteintelligence.ai}'
+      MS365_MCP_PUBLIC_URL: 'https://${PUBLIC_HOSTNAME:-m365-mcp.lumistlabs.ai}'
       # CORS is permissive by default (bearer-auth, no cookies) so any MCP client
       # can connect — leave MS365_MCP_CORS_ORIGIN unset. Set it to pin a single
       # origin only for a hardened single-client deployment.
