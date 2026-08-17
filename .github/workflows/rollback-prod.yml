@@ -20,10 +20,12 @@ jobs:
       contents: read
       id-token: write
     steps:
-      # Load shared infra secrets FIRST so per-project keys from /m365-mcp
-      # (loaded next) can override any collisions with arete-shared subfolders
-      # (e.g. arete-shared/terraform/entra/MICROSOFT_* would otherwise shadow
-      # this app's own Entra client credentials).
+      # Scoped to /tailscale, NOT the project root. A root recursive load
+      # flattens every shared subfolder by bare key name, last-write-wins, and
+      # /vps/gateway also defines VPS_SSH_KEY + VPS_TAILSCALE_IP — for a
+      # different host. Whichever landed last won, so deploys failed at the SSH
+      # handshake. /tailscale yields TAILSCALE_AUTHKEY, VPS_SSH_KEY and
+      # VPS_TAILSCALE_IP uniquely, and matches vps-deploy-core's infra-path.
       - name: Load shared infra secrets from Infisical (OIDC)
         uses: aretecp/github-actions/actions/load-infisical-secrets@v1
         with:
@@ -31,7 +33,7 @@ jobs:
           identity-id: ${{ vars.INFISICAL_OIDC_IDENTITY_ID }}
           project-slug: ${{ vars.INFISICAL_SHARED_PROJECT_SLUG }}
           environment: prod
-          path: /
+          path: /tailscale
           recursive: true
 
       - name: Load app secrets from Infisical (OIDC)
