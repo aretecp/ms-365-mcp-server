@@ -28,29 +28,23 @@ services:
 
     labels:
       - "traefik.enable=true"
-      # Dual-homed during the lumistlabs.dev cutover, but as TWO routers over one
-      # backend rather than a single router with `||`. Traefik issues one
-      # certificate per router, covering every Host() in that router's rule, so
-      # combining the names would put both on one cert -- and the legacy name no
-      # longer resolves (its records went away when DNS moved off Route 53), so
-      # it can never pass an HTTP-01 challenge again. Sharing a cert, its failed
-      # renewal would take the live lumistlabs.dev name down with it. Split, the
-      # failure stays contained to a hostname nothing can reach anyway.
-      # Remove the legacy router once the cutover has merged all the way up.
-      - "traefik.http.routers.m365-mcp-dev.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.dev.areteintelligence.ai}`)"
+      # Back to a single router. The split into two routers was a transitional
+      # step: it kept the dead legacy hostname from sharing a certificate with
+      # the live one, because Traefik issues one cert per router covering every
+      # Host() in its rule, and a name that no longer resolves can never pass
+      # an HTTP-01 challenge -- so its failed renewal would have taken the live
+      # name down with it.
+      #
+      # PUBLIC_HOSTNAME now points at m365-mcp.lumistlabs.dev, so the legacy
+      # name is gone from the OAuth metadata too and there is nothing left to
+      # dual-home. Note this router is built FROM PUBLIC_HOSTNAME, which is why
+      # the legacy router had to be deleted in the same change: leaving it would
+      # have produced two routers with identical rules.
+      - "traefik.http.routers.m365-mcp-dev.rule=Host(`${PUBLIC_HOSTNAME:-m365-mcp.lumistlabs.dev}`)"
       - "traefik.http.routers.m365-mcp-dev.entrypoints=websecure"
       - "traefik.http.routers.m365-mcp-dev.tls=true"
       - "traefik.http.routers.m365-mcp-dev.tls.certresolver=letsencrypt"
       - "traefik.http.routers.m365-mcp-dev.middlewares=security-headers@file,rate-limit@file"
-      - "traefik.http.routers.m365-mcp-dev.service=m365-mcp-dev"
-      # The wildcard *.lumistlabs.dev matches exactly one label, so this is the
-      # flattened `m365-mcp.` form -- `m365.mcp.` would never match it.
-      - "traefik.http.routers.m365-mcp-dev-lumist.rule=Host(`m365-mcp.lumistlabs.dev`)"
-      - "traefik.http.routers.m365-mcp-dev-lumist.entrypoints=websecure"
-      - "traefik.http.routers.m365-mcp-dev-lumist.tls=true"
-      - "traefik.http.routers.m365-mcp-dev-lumist.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.m365-mcp-dev-lumist.middlewares=security-headers@file,rate-limit@file"
-      - "traefik.http.routers.m365-mcp-dev-lumist.service=m365-mcp-dev"
       - "traefik.http.services.m365-mcp-dev.loadbalancer.server.port=3000"
       - "traefik.docker.network=aichat_openwebui-network"
 
@@ -65,7 +59,14 @@ services:
       MS365_MCP_SESSION_KEY:   "${MS365_MCP_SESSION_KEY:?MS365_MCP_SESSION_KEY is required}"
       MS365_MCP_POLICY_ADMINS: "${MS365_MCP_POLICY_ADMINS:?MS365_MCP_POLICY_ADMINS is required}"
 
-      MS365_MCP_PUBLIC_URL:     "https://${PUBLIC_HOSTNAME:-m365.mcp.dev.areteintelligence.ai}"
+      # Must stay in lockstep with the router rule above -- both derive from
+      # PUBLIC_HOSTNAME. This value is what the server advertises as `issuer`
+      # and `authorization_endpoint` in its OAuth metadata, while `token` and
+      # `register` are derived from the request Host. If the two disagree, the
+      # discovery document points clients at one hostname for authorize and
+      # another for token, which is exactly how the new hostname ended up
+      # serving 200 while being unusable for auth.
+      MS365_MCP_PUBLIC_URL:     "https://${PUBLIC_HOSTNAME:-m365-mcp.lumistlabs.dev}"
       MS365_MCP_CORS_ORIGIN:    "https://claude.ai"
       MS365_MCP_ALLOWED_REDIRECT_URIS: "https://claude.ai/api/mcp/auth_callback"
 
