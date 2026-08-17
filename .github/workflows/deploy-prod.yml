@@ -32,7 +32,7 @@ jobs:
       # handshake. /tailscale yields TAILSCALE_AUTHKEY, VPS_SSH_KEY and
       # VPS_TAILSCALE_IP uniquely, and matches vps-deploy-core's infra-path.
       - name: Load shared infra secrets from Infisical (OIDC)
-        uses: aretecp/github-actions/actions/load-infisical-secrets@v1
+        uses: aretecp/github-actions/actions/load-infisical-secrets@v2
         with:
           method: oidc
           identity-id: ${{ vars.INFISICAL_OIDC_IDENTITY_ID }}
@@ -42,7 +42,7 @@ jobs:
           recursive: true
 
       - name: Load app secrets from Infisical (OIDC)
-        uses: aretecp/github-actions/actions/load-infisical-secrets@v1
+        uses: aretecp/github-actions/actions/load-infisical-secrets@v2
         with:
           method: oidc
           identity-id: ${{ vars.INFISICAL_OIDC_IDENTITY_ID }}
