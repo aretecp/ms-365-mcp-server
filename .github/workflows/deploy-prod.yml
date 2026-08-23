@@ -83,7 +83,7 @@ jobs:
             MICROSOFT_TENANT_ID=${{ env.MICROSOFT_TENANT_ID }}
             MS365_MCP_SESSION_KEY=${{ env.MS365_MCP_SESSION_KEY }}
             MS365_MCP_POLICY_ADMINS=${{ env.MS365_MCP_POLICY_ADMINS }}
-            PUBLIC_HOSTNAME=m365-mcp.lumistlabs.ai
+            PUBLIC_HOSTNAME=m365.mcp.areteintelligence.ai
             ENVIRONMENT=production
             VERSION=${{ inputs.version || github.ref_name || 'main' }}
             ENVEOF
