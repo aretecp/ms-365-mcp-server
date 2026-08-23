@@ -1,3 +1,9 @@
+## [2.9.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.8.3...v2.9.0) (2026-08-23)
+
+### New Features
+
+* cut m365-mcp prod over to lumistlabs.ai ([ccf36f3](https://github.com/aretecp/ms-365-mcp-server/commit/ccf36f34b041b409f13da51f5f9f27c52fc0dd6f))
+
 ## [2.8.3](https://github.com/aretecp/ms-365-mcp-server/compare/v2.8.2...v2.8.3) (2026-08-17)
 
 ### Bug Fixes
