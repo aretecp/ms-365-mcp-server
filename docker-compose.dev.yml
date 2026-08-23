@@ -28,19 +28,17 @@ services:
 
     labels:
       - "traefik.enable=true"
-      # Back to a single router. The split into two routers was a transitional
-      # step: it kept the dead legacy hostname from sharing a certificate with
-      # the live one, because Traefik issues one cert per router covering every
-      # Host() in its rule, and a name that no longer resolves can never pass
-      # an HTTP-01 challenge -- so its failed renewal would have taken the live
-      # name down with it.
+      # One router, on the areteintelligence name. The Lumist Labs rename was
+      # decided AGAINST, so `m365-mcp.lumistlabs.dev` is reverted rather than
+      # dual-homed: this repo had been renamed ahead of a plan
+      # (docs/features/operation-rename) that is still `Parked`.
       #
-      # PUBLIC_HOSTNAME now points at m365-mcp.lumistlabs.dev, so the legacy
-      # name is gone from the OAuth metadata too and there is nothing left to
-      # dual-home. Note this router is built FROM PUBLIC_HOSTNAME, which is why
-      # the legacy router had to be deleted in the same change: leaving it would
-      # have produced two routers with identical rules.
-      - "traefik.http.routers.m365-mcp-dev.rule=Host(`${PUBLIC_HOSTNAME:-m365-mcp.lumistlabs.dev}`)"
+      # One router on purpose. Traefik issues one certificate per router covering
+      # every Host() in its rule, so listing a name that does not resolve means a
+      # failed HTTP-01 renewal takes the live name down with it. The router is
+      # built FROM PUBLIC_HOSTNAME, so a second hard-coded router would also
+      # duplicate this rule whenever the two agreed.
+      - "traefik.http.routers.m365-mcp-dev.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.dev.areteintelligence.ai}`)"
       - "traefik.http.routers.m365-mcp-dev.entrypoints=websecure"
       - "traefik.http.routers.m365-mcp-dev.tls=true"
       - "traefik.http.routers.m365-mcp-dev.tls.certresolver=letsencrypt"
@@ -66,7 +64,7 @@ services:
       # discovery document points clients at one hostname for authorize and
       # another for token, which is exactly how the new hostname ended up
       # serving 200 while being unusable for auth.
-      MS365_MCP_PUBLIC_URL:     "https://${PUBLIC_HOSTNAME:-m365-mcp.lumistlabs.dev}"
+      MS365_MCP_PUBLIC_URL:     "https://${PUBLIC_HOSTNAME:-m365.mcp.dev.areteintelligence.ai}"
       MS365_MCP_CORS_ORIGIN:    "https://claude.ai"
       MS365_MCP_ALLOWED_REDIRECT_URIS: "https://claude.ai/api/mcp/auth_callback"
 

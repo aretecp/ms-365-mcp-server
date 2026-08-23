@@ -27,7 +27,7 @@ services:
     # No published ports — Traefik discovers the service over the shared network.
     labels:
       - 'traefik.enable=true'
-      - 'traefik.http.routers.m365-mcp.rule=Host(`${PUBLIC_HOSTNAME:-m365-mcp.lumistlabs.ai}`)'
+      - 'traefik.http.routers.m365-mcp.rule=Host(`${PUBLIC_HOSTNAME:-m365.mcp.areteintelligence.ai}`)'
       - 'traefik.http.routers.m365-mcp.entrypoints=websecure'
       - 'traefik.http.routers.m365-mcp.tls=true'
       - 'traefik.http.routers.m365-mcp.tls.certresolver=letsencrypt'
@@ -49,10 +49,10 @@ services:
 
       # Public URL — fixed for the prod deploy. The OAuth broker advertises this
       # as the issuer and builds its single Microsoft callback from it:
-      #   https://m365-mcp.lumistlabs.ai/auth/callback
+      #   https://m365.mcp.areteintelligence.ai/auth/callback
       # That ONE redirect URI is all the Entra app needs registered, no matter
       # how many MCP clients connect (they obtain their own client_id via DCR).
-      MS365_MCP_PUBLIC_URL: 'https://${PUBLIC_HOSTNAME:-m365-mcp.lumistlabs.ai}'
+      MS365_MCP_PUBLIC_URL: 'https://${PUBLIC_HOSTNAME:-m365.mcp.areteintelligence.ai}'
       # CORS is permissive by default (bearer-auth, no cookies) so any MCP client
       # can connect — leave MS365_MCP_CORS_ORIGIN unset. Set it to pin a single
       # origin only for a hardened single-client deployment.
