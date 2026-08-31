@@ -13,6 +13,7 @@ vi.mock('../src/logger.js', () => ({
 const findTool = (name: string) => ALL_TOOLS.find((t) => t.name === name) as Tool;
 
 const READ_NAMES = [
+  'teams-message-search',
   'teams-chat-list',
   'teams-chat-get',
   'teams-chat-message-list',
@@ -102,6 +103,37 @@ describe('Teams-tool runtime — representative reads', () => {
     const [path, opts] = graphRequest.mock.calls[0] as [string, { method: string }];
     expect(path.startsWith('/me/chats')).toBe(true);
     expect(opts.method).toBe('GET');
+  });
+
+  // #50 / aretecp/lumios#2072: a user asked for group Teams chats to be readable.
+  // Reading them always worked — finding them did not, because chats cannot be
+  // filtered on content and a group chat usually has no topic to match a name
+  // against. This is the tool that closed that gap.
+  it('teams-message-search POSTs the Microsoft Search envelope to /search/query', async () => {
+    await executeTool(findTool('teams-message-search'), mockGraphClient, {
+      body: {
+        requests: [{ entityTypes: ['chatMessage'], query: { queryString: 'from:sarah budget' } }],
+      },
+    });
+    const [path, opts] = graphRequest.mock.calls[0] as [
+      string,
+      { method: string; body?: string; headers?: Record<string, string> },
+    ];
+    expect(path).toBe('/search/query');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body as string)).toEqual({
+      requests: [{ entityTypes: ['chatMessage'], query: { queryString: 'from:sarah budget' } }],
+    });
+  });
+
+  it('teams-message-search needs no scope the read tools did not already ask for', () => {
+    const search = findTool('teams-message-search');
+    const alreadyGranted = ALL_TOOLS.filter((t) => t.name !== 'teams-message-search').flatMap(
+      (t) => t.scopes
+    );
+    for (const scope of search.scopes) {
+      expect(alreadyGranted, `${scope} would need fresh consent`).toContain(scope);
+    }
   });
 
   it('teams-chat-message-list substitutes the chat-id into the path', async () => {
