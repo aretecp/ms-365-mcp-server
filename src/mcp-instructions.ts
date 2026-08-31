@@ -41,6 +41,10 @@ const FRAGMENTS: readonly Fragment[] = [
     toolset: 'teams',
   },
   {
+    text: 'Finding a Teams message: use teams-message-search. Chats cannot be filtered on content, and a group chat usually has no topic, so listing chats will not identify the right one. Search returns a snippet plus ids; fetch the body with teams-chat-message-get or teams-channel-message-get.',
+    toolset: 'teams',
+  },
+  {
     text: 'Files / binary content: use download-bytes for any binary read (drive file content, mail attachments, profile photos, Teams hosted content, meeting recordings); pass it a Graph path or an absolute @microsoft.graph.downloadUrl from a metadata response.',
   },
 ];
