@@ -1,3 +1,9 @@
+## [2.10.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.9.0...v2.10.0) (2026-09-01)
+
+### New Features
+
+* [#50](https://github.com/aretecp/ms-365-mcp-server/issues/50) teams-message-search — find a Teams message by what it says ([#51](https://github.com/aretecp/ms-365-mcp-server/issues/51)) ([88e7b10](https://github.com/aretecp/ms-365-mcp-server/commit/88e7b1010d228594ed537ad3c948e07eba6db208)), closes [aretecp/lumios#2072](https://github.com/aretecp/lumios/issues/2072)
+
 ## [2.9.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.8.3...v2.9.0) (2026-08-23)
 
 ### New Features
