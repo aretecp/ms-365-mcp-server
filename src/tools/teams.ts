@@ -149,9 +149,61 @@ const CREATE_MEETING_TIP =
   'Graph will create the underlying Teams meeting and attach it to the event in one step. ' +
   'Use teams-online-meeting-create only when you need a join URL without a corresponding calendar entry.';
 
+/**
+ * Body for `teams-message-search`. Graph wants the full Microsoft Search
+ * envelope; everything but the query string is defaulted so a plain search is a
+ * one-field call.
+ */
+const messageSearchSchema = z
+  .object({
+    requests: z
+      .array(
+        z.object({
+          entityTypes: z.array(z.literal('chatMessage')).default(['chatMessage']),
+          query: z.object({
+            queryString: z
+              .string()
+              .describe(
+                'What to find. Plain words, or KQL scope terms: from:bob, to:alice, ' +
+                  'sent>2026-08-01, mentions:<entra-oid-without-dashes>, hasAttachment:true, IsRead:false.'
+              ),
+          }),
+          from: z.number().int().min(0).default(0).describe('Offset for paging.'),
+          size: z.number().int().min(1).max(25).default(25).describe('Hits per page, max 25.'),
+          enableTopResults: z
+            .boolean()
+            .optional()
+            .describe('Rank by relevance instead of newest-first.'),
+        })
+      )
+      .length(1),
+  })
+  .describe('Microsoft Search request envelope.');
+
 export const teamsTools: readonly Tool[] = [
   // ---------- Chats (read) ----------
 
+  {
+    name: 'teams-message-search',
+    description:
+      "Search the signed-in user's Teams messages by content — one-on-one, group and channel — " +
+      'and return ranked hits. This is the only way to FIND a message: chats cannot be filtered ' +
+      'by what was said, and group chats often have no topic, so listing them identifies nothing.',
+    method: 'POST',
+    path: '/search/query',
+    // Same scopes the read tools already union: Chat.Read for chat hits,
+    // ChannelMessage.Read.All for channel ones. No new consent.
+    scopes: ['Chat.Read', 'ChannelMessage.Read.All'],
+    readOnly: true,
+    params: [{ name: 'body', location: 'body', schema: messageSearchSchema }],
+    llmTip:
+      'Hits nest under value[0].hitsContainers[0].hits[]. Each carries a `summary` snippet and a ' +
+      '`resource` with the message id plus `chatId` (a chat) or `channelIdentity` (a channel) — ' +
+      'NOT the message body. To read one, follow up with teams-chat-message-get (chatId + id) or ' +
+      'teams-channel-message-get (channelIdentity.teamId + .channelId + id). ' +
+      'Three Graph limits worth knowing: results cannot be sorted, `total` counts this page rather ' +
+      'than all matches, and only messages the signed-in user can already see are searchable.',
+  },
   {
     name: 'teams-chat-list',
     description:

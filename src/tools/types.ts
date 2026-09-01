@@ -122,8 +122,9 @@ export interface Tool {
    */
   requestHeaders?: Record<string, string>;
   /**
-   * Marks a POST endpoint as logically read-only (e.g. `find-meeting-times`).
-   * Reserved for a future read-only-mode toggle; ignored by the v1 runtime.
+   * Marks a POST endpoint as logically read-only (e.g. a Microsoft Search query).
+   * Drives the `readOnlyHint` / `destructiveHint` registration hints, which the
+   * verb alone gets wrong for a search.
    */
   readOnly?: boolean;
   /**

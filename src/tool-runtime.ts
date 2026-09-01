@@ -760,8 +760,13 @@ export function registerTools(
         buildMcpParamSchema(tool),
         {
           title: tool.name,
-          readOnlyHint: tool.method === 'GET',
-          destructiveHint: ['POST', 'PATCH', 'DELETE'].includes(tool.method),
+          // A search is a POST that changes nothing. Deriving the hints from the
+          // verb alone made `teams-message-search` advertise itself as
+          // destructive, so a client that gates on the hint would prompt before
+          // every search. `readOnly` is the tool's own word for it.
+          readOnlyHint: tool.method === 'GET' || tool.readOnly === true,
+          destructiveHint:
+            tool.readOnly !== true && ['POST', 'PATCH', 'DELETE'].includes(tool.method),
           openWorldHint: true,
         },
         async (params) => executeTool(tool, graphClient, params, options.policy)
