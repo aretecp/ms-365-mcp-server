@@ -43,6 +43,12 @@ export function verifyCsrfToken(sessionId: string, candidate: string | undefined
   } catch {
     return false;
   }
-  if (expected.length !== candidate.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(candidate, 'hex'));
+  // Compare the encoded forms, not the hex-decoded bytes: `Buffer.from(x, 'hex')`
+  // silently stops at the first non-hex pair, so an equal-length but malformed
+  // candidate decodes short and timingSafeEqual throws on the length mismatch.
+  // latin1 is 1 byte per char, so byte length always tracks string length.
+  const a = Buffer.from(expected, 'latin1');
+  const b = Buffer.from(candidate, 'latin1');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
