@@ -126,7 +126,7 @@ The full surface audit ran in [issue #11](https://github.com/aretecp/ms-365-mcp-
 
 ## Production deployment
 
-Documented in our internal infrastructure repo. The server expects:
+Deploy, secrets and operations: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). The server expects:
 
 - `MS365_MCP_CLIENT_ID`, `MS365_MCP_TENANT_ID`, `MS365_MCP_CLIENT_SECRET` (latter required for confidential-client setups).
 - `MS365_MCP_PUBLIC_URL` (or `--public-url`) when running behind a reverse proxy. Browser-facing OAuth redirects (including the server's `/auth/callback`) use this; internal endpoints stay on the request origin.
