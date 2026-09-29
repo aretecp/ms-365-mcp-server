@@ -11,7 +11,7 @@
 # Manual invocation (rare, for first-time bootstrap):
 #   infisical run --env prod --path /m365-mcp -- docker compose -f docker-compose.prod.yml up -d --build
 #
-# See docs/DEPLOYMENT.md §7 for the full setup.
+# See docs/DEPLOYMENT.md for the full setup.
 
 services:
   m365-mcp:
