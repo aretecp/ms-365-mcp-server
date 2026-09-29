@@ -17,24 +17,24 @@ npm run format      # prettier --write; CI fails on format drift
 
 ## Layout
 
-| Path | What |
-|---|---|
-| `src/index.ts` | Boot: loads policy (`PolicyManager.fromFile`), admin allowlist, SIGHUP reload |
-| `src/server.ts` | Express app: OAuth broker endpoints, `/mcp`, admin router, CORS |
-| `src/tools/*.ts` | Hand-written tool definitions, one file per domain; `index.ts::ALL_TOOLS` |
-| `src/tool-runtime.ts` | `executeTool` / `registerTools`: policy check, precondition, Graph call, response shaping |
-| `src/toolset-config.ts` | Which toolsets register (`MS365_MCP_TOOLSETS`; unset = core only) |
-| `src/policy/index.ts` | Per-user allow/deny policy and the `mailSend` same-domain guard |
-| `src/oauth/`, `src/sessions/` | DCR client registry, broker state, encrypted session store |
-| `src/admin/` | Cookie-auth admin UI: policy editor, tool-call log |
-| `policy/policy.yaml.example` | Default policy: full read surface, no writes |
-| `test/` | vitest suites |
+| Path                          | What                                                                                      |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| `src/index.ts`                | Boot: loads policy (`PolicyManager.fromFile`), admin allowlist, SIGHUP reload             |
+| `src/server.ts`               | Express app: OAuth broker endpoints, `/mcp`, admin router, CORS                           |
+| `src/tools/*.ts`              | Hand-written tool definitions, one file per domain; `index.ts::ALL_TOOLS`                 |
+| `src/tool-runtime.ts`         | `executeTool` / `registerTools`: policy check, precondition, Graph call, response shaping |
+| `src/toolset-config.ts`       | Which toolsets register (`MS365_MCP_TOOLSETS`; unset = core only)                         |
+| `src/policy/index.ts`         | Per-user allow/deny policy and the `mailSend` same-domain guard                           |
+| `src/oauth/`, `src/sessions/` | DCR client registry, broker state, encrypted session store                                |
+| `src/admin/`                  | Cookie-auth admin UI: policy editor, tool-call log                                        |
+| `policy/policy.yaml.example`  | Default policy: full read surface, no writes                                              |
+| `test/`                       | vitest suites                                                                             |
 
 ## Invariants — do not weaken
 
 - **Tool descriptions are not a security control.** Anything that must hold is a
   `Tool.precondition` (`src/tools/types.ts`), run by `src/tool-runtime.ts` before the Graph
-  call; a throw refuses the call. The README's *Server-enforced invariants* table lists them.
+  call; a throw refuses the call. The README's _Server-enforced invariants_ table lists them.
 - **Same-domain send.** `mail-draft-send` and `mail-send` refuse unless the sender and every
   recipient share one domain (and it is on `mailSend.allowedDomains` if set):
   `src/tools/mail.ts::assertSendWithinDomain` / `::assertDirectSendWithinDomain` →
@@ -69,9 +69,9 @@ npm run format      # prettier --write; CI fails on format drift
 
 ## Docs
 
-| Doc | For |
-|---|---|
-| `README.md` | Tool surface, Entra scopes, invariants table, CLI, auth flow |
-| `docs/DEPLOYMENT.md` | Deploy, secrets, operations |
-| `docs/SECURITY-AUDIT.md` | Tool-surface security audit |
-| `docs/solutions/` | Recorded patterns and bug post-mortems |
+| Doc                      | For                                                          |
+| ------------------------ | ------------------------------------------------------------ |
+| `README.md`              | Tool surface, Entra scopes, invariants table, CLI, auth flow |
+| `docs/DEPLOYMENT.md`     | Deploy, secrets, operations                                  |
+| `docs/SECURITY-AUDIT.md` | Tool-surface security audit                                  |
+| `docs/solutions/`        | Recorded patterns and bug post-mortems                       |

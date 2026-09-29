@@ -100,13 +100,13 @@ copy here. Points that matter for operating this server:
 
 ## 3. Secrets
 
-| Infisical key (`/m365-mcp`) | Server env var            | Source                                                             |
-| --------------------------- | ------------------------- | ------------------------------------------------------------------ |
-| `MICROSOFT_CLIENT_ID`       | `MS365_MCP_CLIENT_ID`     | Entra repo, automatic                                              |
-| `MICROSOFT_CLIENT_SECRET`   | `MS365_MCP_CLIENT_SECRET` | Entra repo, automatic                                              |
-| `MICROSOFT_TENANT_ID`       | `MS365_MCP_TENANT_ID`     | Entra repo, automatic                                              |
-| `MS365_MCP_SESSION_KEY`     | `MS365_MCP_SESSION_KEY`   | Manual: `openssl rand -base64 32`, a different key per environment |
-| `MS365_MCP_POLICY_ADMINS`   | `MS365_MCP_POLICY_ADMINS` | Manual: comma-separated UPNs allowed into the admin UI             |
+| Infisical key (`/m365-mcp`) | Server env var            | Source                                                                                       |
+| --------------------------- | ------------------------- | -------------------------------------------------------------------------------------------- |
+| `MICROSOFT_CLIENT_ID`       | `MS365_MCP_CLIENT_ID`     | Entra repo, automatic                                                                        |
+| `MICROSOFT_CLIENT_SECRET`   | `MS365_MCP_CLIENT_SECRET` | Entra repo, automatic                                                                        |
+| `MICROSOFT_TENANT_ID`       | `MS365_MCP_TENANT_ID`     | Entra repo, automatic                                                                        |
+| `MS365_MCP_SESSION_KEY`     | `MS365_MCP_SESSION_KEY`   | Manual, in both `prod` and `dev`: `openssl rand -base64 32`, a different key per environment |
+| `MS365_MCP_POLICY_ADMINS`   | `MS365_MCP_POLICY_ADMINS` | Manual: comma-separated UPNs allowed into the admin UI                                       |
 
 The mapping from Infisical names to `MS365_MCP_*` happens in the compose files'
 `environment:` block. Each value uses `${X:?X is required}`, so compose refuses to start if the
@@ -117,7 +117,11 @@ decode to 32 bytes.
 Other runtime settings are fixed in `docker-compose.prod.yml`: `MS365_MCP_PUBLIC_URL`,
 `MS365_MCP_ALLOWED_REDIRECT_URIS` (legacy allowlist for non-DCR clients — Claude.ai),
 `MS365_MCP_TOOLSETS=all`, `MS365_MCP_OUTPUT_FORMAT=toon`. `MS365_MCP_CORS_ORIGIN` is left
-unset on purpose (permissive CORS so any MCP client connects).
+unset on purpose in prod (permissive CORS so any MCP client connects).
+
+`docker-compose.dev.yml` differs: it sets no `MS365_MCP_TOOLSETS` (so dev registers the core
+read tools only, and write tools can't be exercised there) and pins `MS365_MCP_CORS_ORIGIN` to
+`https://claude.ai`.
 
 ---
 
@@ -178,8 +182,8 @@ Shared actions used: `load-infisical-secrets@v2`, `tailscale-connect@v1` (pinned
    not the root: a recursive root load flattens every subfolder by key name, and `/vps/gateway`
    defines `VPS_SSH_KEY` / `VPS_TAILSCALE_IP` for a different host.
 2. The runner joins the tailnet and SSHes to `VPS_TAILSCALE_IP` as `vars.VPS_USER`.
-3. The script writes `.env` (`chmod 600`) with the five secrets plus `PUBLIC_HOSTNAME`,
-   `ENVIRONMENT`, `VERSION`, then brings the stack up.
+3. The script writes `.env` (`chmod 600`) (`.env.dev` on dev) with the five secrets plus `PUBLIC_HOSTNAME`,
+   `ENVIRONMENT` (and `VERSION` on prod), then brings the stack up.
 
 GitHub variables the workflows read:
 
@@ -264,6 +268,7 @@ SIGHUP on the VPS:
 
 ```bash
 docker compose -f docker-compose.prod.yml kill -s HUP m365-mcp
+docker compose -f docker-compose.dev.yml kill -s HUP m365-mcp-dev   # dev
 ```
 
 ---
@@ -284,7 +289,7 @@ Run in order after a fresh deploy:
 2. **Admin UI loads.** `https://m365.mcp.areteintelligence.ai/admin/login` → Microsoft sign-in
    → `/admin/policy` with the YAML.
 3. **Edit + save.** Add a comment, save, see the "Saved" banner. The server log gets
-   `policy.saved` with your UPN.
+   `policy.saved` (the log format drops metadata, so no UPN appears in the line).
 4. **Connect an MCP client** (§8) and run a read tool.
 5. **Confirm a write is gated.** Call a write tool before granting it; expect a policy refusal.
    Grant it in the admin UI; retry without a restart.
@@ -332,7 +337,7 @@ Per-call tool outcomes are also recorded for the admin UI (`src/admin/tool-call-
 Look for:
 
 - `policy.saved` — every admin-UI save.
-- `Policy reloaded from <path>` — SIGHUP after a successful read.
+- `Policy reloaded from <path>` — any successful reload, admin-UI save or SIGHUP.
 - `Rejected /authorize with unregistered redirect_uri` — a DCR client sent a URI it did not
   register (client bug), or a non-DCR client's URI is not in `MS365_MCP_ALLOWED_REDIRECT_URIS`.
 
@@ -359,11 +364,11 @@ Re-writes `.env`, checks out the tag, rebuilds. Sessions and policy are untouche
 
 ### Rotating secrets
 
-| Secret                    | How                                                                                                                                                                                                                                                                                                                                                                                            | Blast radius                                    |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `MICROSOFT_CLIENT_SECRET` | In the Entra repo the app has two credential slots. `terraform apply -replace` the **inactive** slot (`module.m365_mcp.module.app_registration.azuread_application_password.slot["<a\|b>"]`), flip `active_slot`, apply, then redeploy here so the new value lands in `.env`. Never replace the active slot; never use `terraform taint`. See that repo's `modules/app_registration/README.md` | None if done in that order                      |
-| `MS365_MCP_SESSION_KEY`   | New key in Infisical, redeploy                                                                                                                                                                                                                                                                                                                                                                 | Every session invalidated; all users re-sign-in |
-| `MS365_MCP_POLICY_ADMINS` | Update Infisical, redeploy (read at start only)                                                                                                                                                                                                                                                                                                                                                | Admin UI access only                            |
+| Secret                    | How                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Blast radius                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `MICROSOFT_CLIENT_SECRET` | In the Entra repo the app has two credential slots. `terraform apply -replace` the **inactive** slot (`module.m365_mcp.module.app_registration.azuread_application_password.slot["<a\|b>"]`), flip the pointer (`active_slot` in the `-prod` workspace, `dev_active_slot` in `-dev` — `apps/m365_mcp/main.tf` sets neither today, so add it to the module call), apply, then redeploy here so the new value lands in `.env`. Never replace the active slot; never use `terraform taint`. See that repo's `modules/app_registration/README.md` | None if done in that order                      |
+| `MS365_MCP_SESSION_KEY`   | New key in Infisical, redeploy                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Every session invalidated; all users re-sign-in |
+| `MS365_MCP_POLICY_ADMINS` | Update Infisical, redeploy (read at start only)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Admin UI access only                            |
 
 ### Backups
 
