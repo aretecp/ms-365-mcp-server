@@ -6,6 +6,7 @@ import { identityTools } from './identity.js';
 import { teamsTools } from './teams.js';
 import { usersTools } from './users.js';
 import { sharepointTools } from './sharepoint.js';
+import { contactsTools } from './contacts.js';
 import { utilityTools } from './utility.js';
 
 export type { Tool, ToolParam, ParamLocation } from './types.js';
@@ -38,6 +39,7 @@ export const ALL_TOOLS: readonly Tool[] = [
   ...tagToolset(teamsTools, 'teams'),
   ...tagToolset(usersTools, 'directory'),
   ...tagToolset(sharepointTools, 'sharepoint'),
+  ...tagToolset(contactsTools, 'contacts'),
 ];
 
 /**
