@@ -16,6 +16,7 @@ Hand-written tool surface. Currently exposing:
 - **SharePoint**: sites, document libraries, lists — read-only.
 - **Teams**: chats, channels (read + send), online meetings (find + create + update + delete), transcripts (read).
 - **Directory**: `identity-get-me`, `user-search`, `user-get`.
+- **Contacts**: read-only — compact listing, full detail (including `personalNotes`/`categories`), complete nested contact-folder discovery. No writes, no delta/sync.
 - **Utilities**: `download-bytes`, `parse-teams-url`.
 
 Per-user OAuth sessions in SQLite. Per-user, per-tool policy in YAML with admin UI + SIGHUP reload. HTTP transport only.
@@ -53,10 +54,13 @@ Delegated permissions needed for the full v1.5 surface. **Bold scopes need admin
 - Calendar: `Calendars.Read`, `Calendars.ReadWrite`
 - Files: `Files.Read`
 - Directory: **`User.ReadBasic.All`**
+- Contacts: `Contacts.Read`
 - SharePoint: **`Sites.Read.All`**
 - Teams chats: `Chat.ReadBasic`, `Chat.Read`, `ChatMessage.Send`
 - Teams channels: **`Team.ReadBasic.All`**, **`Channel.ReadBasic.All`**, **`ChannelMessage.Read.All`**, **`ChannelMessage.Send`**
 - Online meetings: `OnlineMeetings.Read`, `OnlineMeetings.ReadWrite`, **`OnlineMeetingTranscript.Read.All`**
+
+Bold vs. not-bold reflects each scope's **default** `AdminConsentRequired` value in the [Microsoft Graph permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference) (`Contacts.Read` delegated defaults to `No`, same as `Mail.Read`/`Calendars.Read`/`Files.Read`). That default is not a guarantee for every tenant: a tenant's user-consent policy (e.g. "Users can't consent to apps for the organization" or a Conditional Access policy) can still force admin consent for ANY scope regardless of this list. If first sign-in fails with `AADSTS65001`, grant admin consent explicitly for the app registration even for a not-bold scope.
 
 After granting consent, users will see a single consent prompt on first sign-in covering everything they're authorized to use.
 
@@ -99,6 +103,12 @@ mailSend:
 So with the example policy, `me@aretepartners.com` can send to other `@aretepartners.com` recipients, but a message addressed to any external recipient — or a sender outside `aretepartners.com` — is rejected. Admins tune this live via the admin UI (`/admin/policy`) or on disk + SIGHUP; the same-domain summary is shown on the dashboard. Set `requireSameDomain: false` to lift the domain restriction entirely (the per-user allow/deny gate still applies).
 
 The guard is a `Tool.precondition` (see [Server-enforced invariants](#server-enforced-invariants)) — it is enforced in the runtime, not by the tool description, so the model cannot talk its way past it. Cross-domain or external mail still goes through a human in Outlook. This closes out the approved-domain allow-list contemplated in [issue #9](https://github.com/aretecp/ms-365-mcp-server/issues/9).
+
+### Contacts: privacy and pagination
+
+`contact-list` returns a compact field set by default — including `categories` (a business-classification tag) but omitting `personalNotes` (a private free-text annotation). This is a default **projection**, not an authorization boundary: `personalNotes` is also returned by `contact-list` itself given an explicit `$select=personalNotes` or `response_format: 'detailed'`, as well as by `contact-get` — all three still require a tool call the caller's policy must allow. Contact folders can nest arbitrarily; `contact-folder-list` walks the tree one level at a time (`parent-folder-id`), and any folder id it returns works directly with `contact-list`/`contact-get` regardless of depth. Every contact/folder id Graph path parameter is validated as a single opaque path segment (non-empty, not `.`/`..`, no `/`/`\`) before use — a dot-segment or separator could otherwise collapse the resolved Graph path (via standard URL normalization) into a different endpoint than the tool declares.
+
+`contact-list`/`contact-folder-list` do not use the generic narrow-only truncation envelope the rest of the tool surface uses (see [Server-enforced invariants](#server-enforced-invariants) / `docs/solutions/architecture-patterns/mcp-tool-surface-design.md` for why that design is deliberate elsewhere). An address book can run to thousands of contacts, and [Microsoft Graph's paging contract](https://learn.microsoft.com/en-us/graph/paging) permits empty result pages and requires following its `@odata.nextLink` verbatim rather than reconstructing continuation — so these two tools report `{ value, returnedCount, hasMore, cursor? }` instead: pass `cursor` back verbatim to continue, stop once `hasMore` is false. `cursor` is an opaque, HMAC-signed token minted by this server (using `MS365_MCP_SESSION_KEY`) and bound to the exact tool, the exact resolved collection path (so a same-host `@odata.nextLink` for a different Graph resource is refused, not followed), and the caller that requested it — the server refuses a cursor that doesn't match on redemption, so one user's cursor can't be replayed by another, and a cursor from one folder/filter can't be redirected at another. It carries only a Graph path+query (never a bearer token or row data) taken from Graph's own validated `@odata.nextLink`, so the raw nextLink URL itself is never exposed to the caller. A response-size-ceiling truncation advances the cursor by exactly how many rows this response actually returned, replaying the same already-fetched Graph page to recover the rest. This is best-effort continuation, not a frozen snapshot: Graph has no consistency token for contacts, so if the mailbox changes while paginating (a contact added, deleted, or reordered), a row could occasionally be skipped or duplicated near the edit — the same limitation any offset-based Graph paging has. `fetchAllPages` is refused on both tools (and not advertised in their schema) so the old all-pages merge can never undermine this contract. The response-size ceiling is enforced against the actual serialized envelope in whichever [output format](#output-formats) is configured (JSON or TOON) — both are fully supported, matching this repo's deployed `MS365_MCP_OUTPUT_FORMAT=toon` default.
 
 ## Server-enforced invariants
 

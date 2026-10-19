@@ -20,6 +20,7 @@ export const ALL_TOOLSETS: readonly Toolset[] = [
   'directory',
   'teams',
   'sharepoint',
+  'contacts',
 ];
 
 /**
@@ -38,6 +39,9 @@ export const CORE_TOOL_NAMES: ReadonlySet<string> = new Set([
   'calendar-event-get',
   'drive-children-list',
   'drive-item-get',
+  'contact-list',
+  'contact-get',
+  'contact-folder-list',
 ]);
 
 /** Enabled toolsets: `'all'` registers everything; a Set lists the enabled domains (core always on). */

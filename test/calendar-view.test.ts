@@ -55,14 +55,13 @@ describe('Calendar tools', () => {
       }
     );
 
-    it('GET Graph tools get a fetchAllPages parameter (utility tools and write tools do not)', () => {
+    it('GET Graph tools get fetchAllPages unless they use cursor pagination', () => {
       registerTools(mockServer as never, mockGraphClient);
       for (const call of mockServer.tool.mock.calls) {
         const toolName = call[0] as string;
         const hints = call[3] as { readOnlyHint?: boolean };
-        // Skip utility tools (parse-teams-url, download-bytes) and any non-GET Graph tool.
         if (toolName === 'parse-teams-url' || toolName === 'download-bytes') continue;
-        if (hints?.readOnlyHint !== true) continue;
+        if (hints?.readOnlyHint !== true || findTool(toolName)?.cursorPagination) continue;
         expect(call[2]).toHaveProperty('fetchAllPages');
       }
     });
