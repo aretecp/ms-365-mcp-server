@@ -60,8 +60,11 @@ Three things must persist across restarts:
 1. **`/data/sessions.db`** — refresh tokens and DCR client registrations. Lose it and every
    user re-OAuths.
 2. **`/policy/policy.yaml`** — per-user allow/deny rules and the `mailSend` block.
-3. **`MS365_MCP_SESSION_KEY`** — the AES-256 key encrypting session blobs. Change it and every
-   existing session is unreadable. Treat it like a database master key.
+3. **`MS365_MCP_SESSION_KEY`** — the AES-256 key encrypting session blobs (also used to sign admin
+   CSRF tokens and contacts-tool pagination cursors — same key, different HMAC use each time).
+   Change it and every existing session is unreadable and every outstanding contacts cursor is
+   refused (callers just restart pagination from the beginning — not a data-loss mode). Treat it
+   like a database master key.
 
 The volumes are `m365_mcp_data` / `m365_mcp_policy` (prod) and `m365_mcp_data_dev` /
 `m365_mcp_policy_dev` (dev), declared in the compose files. Compose prefixes them with the
@@ -217,6 +220,33 @@ resolve (`dig +short m365.mcp.areteintelligence.ai`).
 The first boot on an empty volume installs the example policy (§4): full read surface in
 `defaults.allow`, **all writes off**. Grant writes per user through the admin UI
 (`/admin/policy`), or by editing `/policy/policy.yaml` in the volume and sending SIGHUP.
+
+**Adding a tool to `policy/policy.yaml.example` in this repo does not touch an already-deployed
+`/policy/policy.yaml` on the volume** — the example is only copied in on a fresh, empty volume
+(§4). A new read tool (e.g. the `contact-*` tools) registers under `CORE_TOOL_NAMES` regardless,
+but `policy.check` fails closed on anything not in the live `defaults.allow`/a user's `allow`, so
+it is reachable-but-denied until an operator edits the live file (or the admin UI) and reloads.
+After adding a new tool here, check whether `defaults.allow` on each running deployment needs the
+same addition.
+
+**Rolling out a new scope (e.g. `Contacts.Read`) is a three-step, strictly-ordered sequence — doing
+only the first two leaves every already-connected agent unable to use the new tool:**
+
+1. **Entra**: add the delegated permission to the app registration and grant tenant admin consent
+   where required (§2 — Terraform requests the permission, a human still has to click "Grant admin
+   consent"; the README's _Entra app setup_ table lists which scopes need it, with the caveat that
+   a tenant's own consent policy can force admin consent even for a not-bold scope).
+2. **Active policy**: add the new tool to the live `/policy/policy.yaml` `defaults.allow` (or a
+   user's `allow`) and reload — admin UI save, or edit + SIGHUP. The example file alone does
+   nothing for a running deployment (previous paragraph).
+3. **Reconnect every already-signed-in client.** This step is easy to miss: a session's access
+   token is refreshed via `grant_type=refresh_token` with no `scope` parameter
+   (`src/lib/microsoft-auth.ts::refreshAccessToken`), so Entra returns a token with the **same**
+   scopes the session originally consented to — a silent refresh never picks up a scope added to
+   the app registration after that session's original sign-in. Each existing MCP client must fully
+   re-run the OAuth flow (sign out and back in, or revoke+reconnect) to get a token that actually
+   includes the new scope; until then its calls to the new tool fail with a Graph permission error
+   even though steps 1–2 are both done.
 
 A day-one shape for a power user:
 
@@ -390,7 +420,12 @@ Keep a copy of the policy YAML outside the box.
 ## 10. Before a deploy
 
 - Admin consent granted for every scope that needs it. Without it discovery works and the first
-  tool call fails.
+  tool call fails. Check the README's _Entra app setup_ table against `apps/m365_mcp/main.tf` in
+  the Entra repo for any scope this deploy newly requires (e.g. `Contacts.Read`) — Terraform
+  requests it, but admin consent is still a manual click per §2.
+- If this deploy adds a scope: the live `policy.yaml` `defaults.allow`/a user's `allow` updated and
+  reloaded, AND every already-connected client told to reconnect/re-run OAuth — see §6, step 3. A
+  silent token refresh does not pick up a newly added scope.
 - `MS365_MCP_SESSION_KEY` and `MS365_MCP_POLICY_ADMINS` present in Infisical for the environment.
 - DNS resolves to the VPS.
 - `npm run verify` green on the ref being deployed.

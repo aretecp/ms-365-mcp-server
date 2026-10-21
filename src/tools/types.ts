@@ -26,7 +26,14 @@ export type ParamLocation = 'path' | 'query' | 'header' | 'body';
  * disclosure. A curated cross-domain "core" set always registers; the rest of
  * each domain is gated behind enabling that toolset (see `toolset-config.ts`).
  */
-export type Toolset = 'mail' | 'calendar' | 'files' | 'directory' | 'teams' | 'sharepoint';
+export type Toolset =
+  | 'mail'
+  | 'calendar'
+  | 'files'
+  | 'directory'
+  | 'teams'
+  | 'sharepoint'
+  | 'contacts';
 
 /**
  * Server-side guard invoked before a tool's main Graph call. Throw to refuse
@@ -156,6 +163,26 @@ export interface Tool {
    * (`toolset-config.ts`) register regardless of this tag.
    */
   toolset?: Toolset;
+  /**
+   * Opt this GET list tool into opaque, server-issued cursor pagination
+   * (`{ value, returnedCount, hasMore, cursor?, truncated?, hint? }`)
+   * instead of the generic narrow-only truncation envelope ({@link
+   * shapeResponseSize} in `tool-runtime.ts`), via a dedicated request/
+   * response flow (`executeCursorPaginatedTool` in `tool-runtime.ts`).
+   * `hasMore`/`cursor` are derived from Graph's own `@odata.nextLink`
+   * (validated against the configured endpoint/API version) and from how
+   * many rows of an already-fetched page are still pending — never from
+   * arithmetic on a returned-item count, so an empty Graph page that still
+   * carries a `nextLink` correctly advances rather than appearing complete.
+   * The cursor is HMAC-signed and bound to the exact tool, resolved
+   * collection path, and caller — see `src/tools/contacts-cursor.ts`.
+   * `fetchAllPages` is refused outright (not exposed in the MCP schema,
+   * not honored if sent anyway): a server-side multi-page merge can itself
+   * hit the response-size ceiling with no cursor, undermining this
+   * contract. Use for collections callers may need to page through
+   * completely (e.g. `contact-list`).
+   */
+  cursorPagination?: boolean;
 }
 
 /**

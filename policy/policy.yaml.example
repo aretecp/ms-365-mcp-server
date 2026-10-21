@@ -45,6 +45,14 @@ defaults:
     - user-search
     - user-get
 
+    # Contacts (read) — contact-list's default compact fields include
+    # categories but omit personalNotes; personalNotes is a default
+    # projection choice, not an authorization boundary — an explicit
+    # $select or response_format:'detailed' on contact-list also returns it.
+    - contact-list
+    - contact-get
+    - contact-folder-list
+
     # SharePoint (read)
     - sharepoint-site-list
     - sharepoint-site-get
