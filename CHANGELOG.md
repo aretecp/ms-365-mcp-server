@@ -1,3 +1,9 @@
+## [2.11.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.10.3...v2.11.0) (2026-10-21)
+
+### New Features
+
+* **contacts:** add read-only Outlook contacts tools ([7cc9d75](https://github.com/aretecp/ms-365-mcp-server/commit/7cc9d75fa7c043e1f6ed7b8e720d64eb38845da7))
+
 ## [2.10.3](https://github.com/aretecp/ms-365-mcp-server/compare/v2.10.2...v2.10.3) (2026-09-18)
 
 ### Bug Fixes
