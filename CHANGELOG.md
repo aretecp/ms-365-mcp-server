@@ -1,3 +1,20 @@
+## [2.12.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.11.0...v2.12.0) (2026-11-20)
+
+### New Features
+
+* condense every tool response to ids + main summary ([28ddf41](https://github.com/aretecp/ms-365-mcp-server/commit/28ddf41155ff01eb60d1482389906a0923779a9c))
+* **files:** guarded OneDrive/SharePoint write tools ([26d02fa](https://github.com/aretecp/ms-365-mcp-server/commit/26d02fae48e889dd7000c8c5dcfa56394f61da72))
+* Microsoft 365 connector-parity tools ([de09661](https://github.com/aretecp/ms-365-mcp-server/commit/de096612e1b08ad90bf157ea3f08f86a1729d696))
+* **runtime:** 8 MB /mcp bodies, ToolRefusal, PUT tools, safer path ids ([52bd4c1](https://github.com/aretecp/ms-365-mcp-server/commit/52bd4c1f3e737a53e147e3e2a2cea6e2b632eb01))
+* **runtime:** condense new tools' Graph responses via Tool.shape ([0dd7c1d](https://github.com/aretecp/ms-365-mcp-server/commit/0dd7c1da4771ade414911a8a1184aa2b9525fb72))
+
+### Bug Fixes
+
+* **files:** apply adversarial-review fixes to drive write tools ([652d585](https://github.com/aretecp/ms-365-mcp-server/commit/652d5857448d71f273b5c9b90a9869443ef38e58))
+* **files:** write file bytes via conditional upload sessions ([dbda5ea](https://github.com/aretecp/ms-365-mcp-server/commit/dbda5ea229f829244033e2cee62ef03b3afb5ebe))
+* **search:** bound flattened search output with a size budget ([464860d](https://github.com/aretecp/ms-365-mcp-server/commit/464860da9c1cd5dc34eb030e4081d22e1112bf63))
+* **tools:** read precondition probes via makeRequest ([6d8bc4a](https://github.com/aretecp/ms-365-mcp-server/commit/6d8bc4a08ceef91f52aa66aa822822902a851abc))
+
 ## [2.11.0](https://github.com/aretecp/ms-365-mcp-server/compare/v2.10.3...v2.11.0) (2026-10-21)
 
 ### New Features
