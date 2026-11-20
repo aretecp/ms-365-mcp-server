@@ -16,11 +16,13 @@ import {
   type CallToolResult,
 } from './tools/index.js';
 import { toolCallLog, redactArgs, redactResponse } from './admin/tool-call-log.js';
+import { ToolRefusal } from './tools/types.js';
 import { MINIMAL_SELECT } from './tools/projections.js';
 import { resolveEnabledToolsets, isToolEnabled, type ToolsetSelection } from './toolset-config.js';
 import { getCloudEndpoints } from './cloud-config.js';
 import { encodePathValue } from './tools/graph-path.js';
 import { signCursor, verifyCursor, resolveTrustedNextLink } from './tools/contacts-cursor.js';
+import { resolveAuthScopes } from './oauth/scopes.js';
 
 /** Hard cap on Graph `$top` for list requests, configurable via env. */
 function maxTopFromEnv(): number | undefined {
@@ -599,7 +601,12 @@ async function executeTool(
   const startedAt = Date.now();
   const ctx = getRequestContext();
   const upn = ctx?.userPrincipalName ?? null;
-  logger.info(`Tool ${tool.name} called with params: ${JSON.stringify(params)}`);
+  // Long strings (base64 file content, message bodies) are summarized, not logged.
+  logger.info(
+    `Tool ${tool.name} called with params: ${JSON.stringify(params, (_k, v) =>
+      typeof v === 'string' && v.length > 200 ? `[${v.length} chars]` : v
+    )}`
+  );
 
   if (policy && !policy.check({ userPrincipalName: upn, toolName: tool.name })) {
     logger.warn(
@@ -650,6 +657,27 @@ async function executeTool(
         userOid: ctx?.userOid,
         startedAt,
       });
+    }
+
+    if (tool.execute) {
+      const raw = await tool.execute(graphClient, params, {
+        policy,
+        userPrincipalName: upn,
+        userOid: ctx?.userOid,
+      });
+      const result = asCallToolResult(graphClient.formatJsonResponse(raw));
+      toolCallLog.record({
+        id: crypto.randomUUID(),
+        ts: startedAt,
+        upn,
+        toolName: tool.name,
+        status: 'allowed',
+        latencyMs: Date.now() - startedAt,
+        argsExcerpt: redactArgs(params),
+        responseExcerpt: redactResponse(result.content[0]?.text ?? null),
+        errorText: null,
+      });
+      return result;
     }
 
     const paramByName = new Map<string, ToolParam>();
@@ -793,7 +821,29 @@ async function executeTool(
 
     logger.info(`Making graph request to ${path} with options: ${JSON.stringify(requestOptions)}`);
 
-    const response = await graphClient.graphRequest(path, requestOptions);
+    // `shape` condenses the raw Graph object to what an agent needs for its
+    // next call (shapes keep the common $expand results they know about). The
+    // caller opts out by asking for specific fields ($select), the full object
+    // (response_format: 'detailed'), headers, or extended properties.
+    // makeRequest throws on Graph errors, landing in the catch below.
+    const shape =
+      tool.shape &&
+      !requestOptions.rawResponse &&
+      params.response_format !== 'detailed' &&
+      params.includeHeaders !== true &&
+      !params.select &&
+      params.expandExtendedProperties !== true
+        ? tool.shape
+        : undefined;
+    const send = async (p: string) =>
+      shape
+        ? graphClient.formatJsonResponse(
+            shape(await graphClient.makeRequest(p, requestOptions)),
+            false,
+            requestOptions.excludeResponse
+          )
+        : graphClient.graphRequest(p, requestOptions);
+    const response = await send(path);
 
     const fetchAllPages = params.fetchAllPages === true;
     if (fetchAllPages && response?.content?.[0]?.text) {
@@ -823,7 +873,7 @@ async function executeTool(
             logger.info(`Fetching page ${pageCount + 1} from: ${nextLink}`);
             const url = new URL(nextLink);
             const nextPath = url.pathname.replace('/v1.0', '') + url.search;
-            const nextResponse = await graphClient.graphRequest(nextPath, { ...requestOptions });
+            const nextResponse = await send(nextPath);
             if (nextResponse?.content?.[0]?.text) {
               const next = JSON.parse(nextResponse.content[0].text);
               if (Array.isArray(next.value)) allItems = allItems.concat(next.value);
@@ -909,6 +959,23 @@ async function executeTool(
     return result;
   } catch (error) {
     const message = (error as Error).message;
+    // A guard inside `execute` refused before writing: same outcome and audit
+    // status as a Tool.precondition refusal.
+    if (error instanceof ToolRefusal) {
+      logger.warn(`Tool ${tool.name} refused for ${upn ?? 'anonymous'}: ${message}`);
+      toolCallLog.record({
+        id: crypto.randomUUID(),
+        ts: startedAt,
+        upn,
+        toolName: tool.name,
+        status: 'precondition_failed',
+        latencyMs: Date.now() - startedAt,
+        argsExcerpt: redactArgs(params),
+        responseExcerpt: null,
+        errorText: message,
+      });
+      return preconditionFailedResult(tool, message);
+    }
     logger.error(`Error in tool ${tool.name}: ${message}`);
     toolCallLog.record({
       id: crypto.randomUUID(),
@@ -963,7 +1030,7 @@ function buildMcpParamSchema(tool: Tool): Record<string, z.ZodTypeAny> {
       .optional();
   }
 
-  if (tool.projection) {
+  if (tool.projection || tool.shape) {
     paramSchema['response_format'] = z
       .enum(['minimal', 'detailed'])
       .describe(
@@ -1168,8 +1235,7 @@ export function registerTools(
           // destructive, so a client that gates on the hint would prompt before
           // every search. `readOnly` is the tool's own word for it.
           readOnlyHint: tool.method === 'GET' || tool.readOnly === true,
-          destructiveHint:
-            tool.readOnly !== true && ['POST', 'PATCH', 'DELETE'].includes(tool.method),
+          destructiveHint: tool.readOnly !== true && tool.method !== 'GET',
           openWorldHint: true,
         },
         async (params) => executeTool(tool, graphClient, params, options.policy)
@@ -1183,7 +1249,7 @@ export function registerTools(
   }
 
   // Utility tools always register (core utilities, no toolset gating).
-  const utilityCtx: UtilityToolContext = { graphClient };
+  const utilityCtx: UtilityToolContext = { graphClient, requestedScopes: resolveAuthScopes() };
   for (const utility of utilityTools) {
     try {
       registerUtilityToolWithMcp(server, utility, utilityCtx, options.policy);

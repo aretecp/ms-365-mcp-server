@@ -45,7 +45,19 @@ const FRAGMENTS: readonly Fragment[] = [
     toolset: 'teams',
   },
   {
-    text: 'Files / binary content: use download-bytes for any binary read (drive file content, mail attachments, profile photos, Teams hosted content, meeting recordings); pass it a Graph path or an absolute @microsoft.graph.downloadUrl from a metadata response.',
+    text: 'Finding a file or folder: use sharepoint-search (OneDrive and every SharePoint site you can read). The *-children-list tools only browse a folder you already know.',
+    toolset: 'sharepoint',
+  },
+  {
+    text: 'Changing a file: read it first (drive-item-get or sharepoint-drive-item-get) for its eTag, then call drive-file-update with that eTag. New files use drive-file-upload, which never overwrites.',
+    toolset: 'files',
+  },
+  {
+    text: 'People outside the tenant (clients, lenders) are not in user-search; find them with people-search, which ranks everyone you correspond with.',
+    toolset: 'directory',
+  },
+  {
+    text: 'Files / binary content: use download-bytes for any binary read (drive file content, mail attachments, profile photos, Teams hosted content, meeting recordings); pass it a relative Graph path ending in /content or /$value.',
   },
 ];
 

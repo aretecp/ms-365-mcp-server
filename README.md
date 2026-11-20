@@ -10,14 +10,14 @@ Hosted on VPS
 
 Hand-written tool surface. Currently exposing:
 
-- **Mail**: read + draft + delete + **same-domain send** (Outlook). Send is allowed only when the sender and every recipient share one domain — see [Same-domain Mail.Send](#same-domain-mailsend).
-- **Calendar**: read + create + update + delete events.
-- **Files (OneDrive)**: read-only.
-- **SharePoint**: sites, document libraries, lists — read-only.
-- **Teams**: chats, channels (read + send), online meetings (find + create + update + delete), transcripts (read).
-- **Directory**: `identity-get-me`, `user-search`, `user-get`.
+- **Mail**: read + draft (new, reply, reply-all, forward) + delete drafts + **same-domain send** (Outlook). Send is allowed only when the sender and every recipient share one domain — see [Same-domain Mail.Send](#same-domain-mailsend). Categories (Outlook's labels): manage the master list and add/remove categories on any message or whole thread — the one write allowed on received mail, limited to `categories`.
+- **Calendar**: read + keyword search + free/busy (`calendar-schedule-get`) + suggested times (`calendar-meeting-times-find`) + create + update + delete events.
+- **Files (OneDrive + SharePoint)**: read, plus guarded writes — upload a new file, update content (eTag required), create folder, rename, move/copy within one drive, delete single files.
+- **SharePoint**: sites, document libraries, lists, and file/folder search across OneDrive + SharePoint (`sharepoint-search`) — read-only.
+- **Teams**: chats (create + read + send), channels (read + send), online meetings (find + create + update + delete), transcripts (read).
+- **Directory**: `identity-get-me`, `user-search`, `user-get`, `people-search` (relevance-ranked people incl. external correspondents).
 - **Contacts**: read-only — compact listing, full detail (including `personalNotes`/`categories`), complete nested contact-folder discovery. No writes, no delta/sync.
-- **Utilities**: `download-bytes`, `parse-teams-url`.
+- **Utilities**: `download-bytes`, `parse-teams-url`, `identity-granted-scopes-get` (scopes this session's token carries vs. what the server requests).
 
 Per-user OAuth sessions in SQLite. Per-user, per-tool policy in YAML with admin UI + SIGHUP reload. HTTP transport only.
 
@@ -50,13 +50,13 @@ npm run dev:http   # binds 127.0.0.1:3000
 Delegated permissions needed for the full v1.5 surface. **Bold scopes need admin consent** on the Entra app registration:
 
 - `User.Read`, `offline_access` (silently injected)
-- Mail: `Mail.Read`, `Mail.ReadWrite`, `Mail.Send` (send is gated by a same-domain guard — see [Same-domain Mail.Send](#same-domain-mailsend))
-- Calendar: `Calendars.Read`, `Calendars.ReadWrite`
-- Files: `Files.Read`
-- Directory: **`User.ReadBasic.All`**
+- Mail: `Mail.Read`, `Mail.ReadWrite`, `Mail.Send` (send is gated by a same-domain guard — see [Same-domain Mail.Send](#same-domain-mailsend)), `MailboxSettings.Read`, `MailboxSettings.ReadWrite` (category master list only — no tool touches other mailbox settings)
+- Calendar: `Calendars.Read`, `Calendars.Read.Shared` (`calendar-meeting-times-find`), `Calendars.ReadWrite`
+- Files: `Files.Read`, `Files.ReadWrite.All` (the `drive-*` write tools; limits below)
+- Directory: **`User.ReadBasic.All`**, `People.Read`
 - Contacts: `Contacts.Read`
-- SharePoint: **`Sites.Read.All`**
-- Teams chats: `Chat.ReadBasic`, `Chat.Read`, `ChatMessage.Send`
+- SharePoint: **`Sites.Read.All`** (also covers `sharepoint-search`)
+- Teams chats: `Chat.ReadBasic`, `Chat.Read`, `Chat.Create`, `ChatMessage.Send`
 - Teams channels: **`Team.ReadBasic.All`**, **`Channel.ReadBasic.All`**, **`ChannelMessage.Read.All`**, **`ChannelMessage.Send`**
 - Online meetings: `OnlineMeetings.Read`, `OnlineMeetings.ReadWrite`, **`OnlineMeetingTranscript.Read.All`**
 
@@ -110,6 +110,15 @@ The guard is a `Tool.precondition` (see [Server-enforced invariants](#server-enf
 
 `contact-list`/`contact-folder-list` do not use the generic narrow-only truncation envelope the rest of the tool surface uses (see [Server-enforced invariants](#server-enforced-invariants) / `docs/solutions/architecture-patterns/mcp-tool-surface-design.md` for why that design is deliberate elsewhere). An address book can run to thousands of contacts, and [Microsoft Graph's paging contract](https://learn.microsoft.com/en-us/graph/paging) permits empty result pages and requires following its `@odata.nextLink` verbatim rather than reconstructing continuation — so these two tools report `{ value, returnedCount, hasMore, cursor? }` instead: pass `cursor` back verbatim to continue, stop once `hasMore` is false. `cursor` is an opaque, HMAC-signed token minted by this server (using `MS365_MCP_SESSION_KEY`) and bound to the exact tool, the exact resolved collection path (so a same-host `@odata.nextLink` for a different Graph resource is refused, not followed), and the caller that requested it — the server refuses a cursor that doesn't match on redemption, so one user's cursor can't be replayed by another, and a cursor from one folder/filter can't be redirected at another. It carries only a Graph path+query (never a bearer token or row data) taken from Graph's own validated `@odata.nextLink`, so the raw nextLink URL itself is never exposed to the caller. A response-size-ceiling truncation advances the cursor by exactly how many rows this response actually returned, replaying the same already-fetched Graph page to recover the rest. This is best-effort continuation, not a frozen snapshot: Graph has no consistency token for contacts, so if the mailbox changes while paginating (a contact added, deleted, or reordered), a row could occasionally be skipped or duplicated near the edit — the same limitation any offset-based Graph paging has. `fetchAllPages` is refused on both tools (and not advertised in their schema) so the old all-pages merge can never undermine this contract. The response-size ceiling is enforced against the actual serialized envelope in whichever [output format](#output-formats) is configured (JSON or TOON) — both are fully supported, matching this repo's deployed `MS365_MCP_OUTPUT_FORMAT=toon` default.
 
+### Response shaping
+
+No tool hands the agent Graph's raw object. Every response is condensed to what the agent needs for its next step: an `id` on every item (plus `conversationId`, `chatId`, `driveId`, `contentPath`, … where a follow-up tool takes them), the item's main summary (subject, people as `Name <address>`, times, plain-text Teams bodies), and links for the human (`webLink`/`webUrl`). Graph bookkeeping (`@odata.*`, `changeKey`, hashes, empty fields) is dropped.
+
+- **Lists** project fields server-side (`$select`, `src/tools/projections.ts`) and/or shape each item (`Tool.shape` with `listShape`, `src/tools/shapes.ts`), keeping `@odata.nextLink` for paging. Teams message lists cap each body at 1,000 chars and mark `truncated`; the matching `-get` tool returns the full text.
+- **Reads by id** return the full summary including the body (mail, events, Teams messages) or every populated property (`contact-get`).
+- **Writes** return the new/updated item's id and the fields needed to check or continue (draft recipients, event times and join link, sent-message link) — never the echoed payload (attachment bytes are never returned).
+- **Opt out** per call with `select` (exact fields) or `response_format: "detailed"` (the full Graph object).
+
 ## Server-enforced invariants
 
 > **Tool descriptions are not a security control.** The LLM can ignore them; well-meaning prompt-engineering papers over real authorization gaps. This server enforces critical invariants in code, in the runtime, before any outbound Graph call. If the description says "draft" and the LLM passes a non-draft id, the server refuses — independent of policy, independent of the model's intent.
@@ -128,7 +137,23 @@ Current preconditions:
 | `calendar-event-update` | event must satisfy `isOrganizer=true`                                       | `assertIsOrganizer` — GET `/me/events/{id}?$select=isOrganizer`, refuse if not organizer                                       |
 | `calendar-event-delete` | event must satisfy `isOrganizer=true`                                       | same                                                                                                                           |
 
-`Mail.ReadWrite` at the Graph layer is broader than what we want to expose. Without `assertIsDraft`, the LLM could PATCH any message (mark as read, flag, recategorize), DELETE any message (clear an inbox), or attach files to received mail. The precondition closes that gap.
+Tools with a server-built request body (`Tool.execute`): the model supplies validated parameters, never the Graph payload.
+
+| Tool                                       | Invariant                                                                | Implementation                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mail-message-categories-modify`           | only `categories` changes, on any message                                | reads current categories, PATCHes `{ categories }` built from add/remove names                                                                                                                                                                                                                              |
+| `mail-thread-categories-modify`            | only `categories` changes; ≤100 messages; no partial start on bad input  | reads the whole thread (trusted `nextLink` only) before any PATCH; refuses oversized threads; reports per-message failures                                                                                                                                                                                  |
+| `teams-chat-create`                        | caller included; colleagues only (no guests, no external users)          | GETs each member first, refuses `userType=Guest`, `#EXT#` UPNs, or unreadable profiles; binds GUIDs as `owner`, no `tenantId`                                                                                                                                                                               |
+| `drive-file-upload`, `drive-folder-create` | never overwrite                                                          | Graph-enforced: upload goes through an upload session with `conflictBehavior=fail` (a name created mid-session fails the commit, 409, per Graph docs); folder create sends the same. The server's prior name GET is only an early refusal. Names validated; upload ≤ 4 MB                                   |
+| `drive-file-update`                        | no silent clobber of a concurrent edit                                   | refuses `*`/unquoted eTags; early-refuses on an eTag mismatch; sends `If-Match` on `createUploadSession` (Graph: 412 on mismatch, checked at session creation). The eTag must match when the call starts; an edit made during the upload itself is not guaranteed to be caught                              |
+| `drive-item-move`, `drive-item-copy`       | these tools cannot cross drives (library or OneDrive); copy is file-only | GETs source and destination; refuses unless both share a `driveId`, the destination is a folder, and neither is a shortcut (`remoteItem`) or the source root; sends the checked destination id. `drive-item-copy` additionally refuses a folder/notebook/shortcut source — Graph copies folders recursively |
+| `drive-file-delete`                        | one file at a time; never a tree                                         | GETs the item; refuses folders, notebooks (`package`), shortcuts, and the root; deletes go to the recycle bin                                                                                                                                                                                               |
+
+The same-drive rule bounds move/copy only: an agent allowed `download-bytes` and `drive-file-upload` can still re-upload content it can read into any drive it can write. Guard refusals inside `Tool.execute` throw `ToolRefusal` and are logged as `precondition_failed`.
+
+`download-bytes` accepts only binary endpoints: a relative path ending in `/content` or `/$value`, with no `.`/`..` segments. Otherwise it would be a free-form GET reaching any JSON resource the token's scopes allow (mailbox settings, inbox rules), outside per-tool policy.
+
+`Mail.ReadWrite` at the Graph layer is broader than what we want to expose. Without `assertIsDraft`, the LLM could PATCH any message (mark as read, flag, move), DELETE any message (clear an inbox), or attach files to received mail. The precondition closes that gap. The single deliberate exception is categorization: the two `*-categories-modify` tools can tag received and sent mail, but their handlers build a `{ categories }`-only body, so nothing else on the message is reachable.
 
 `Calendars.ReadWrite` has the same shape: it covers any event the signed-in user is an attendee of, not just events they organize. Without `assertIsOrganizer`, the LLM could PATCH an attendee-side event (silently mutating the user's local copy) or DELETE one (which Graph interprets as declining the invite). The precondition restricts both write paths to organizer-owned events; accepted/declined invites must be managed by the human in Outlook.
 

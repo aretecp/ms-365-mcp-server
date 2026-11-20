@@ -1,9 +1,30 @@
 import { z } from 'zod';
 import { OData, type Tool } from './types.js';
+import { compact, listShape } from './shapes.js';
 
 const USER_SELECT_TIP =
-  'IMPORTANT: always pass $select so responses stay small. The default user resource is bloated. ' +
-  'Recommended: $select=id,displayName,userPrincipalName,mail,jobTitle,department.';
+  'Default fields: id, displayName, userPrincipalName, mail, jobTitle, department. Pass select for ' +
+  'others (e.g. officeLocation,businessPhones) or response_format: "detailed" for the full object.';
+
+/** person → id, name, addresses, role, company, and kind (OrganizationUser, PersonalContact, …). */
+const shapePeople = listShape((raw) => {
+  const p = raw as {
+    id?: string;
+    displayName?: string;
+    scoredEmailAddresses?: { address?: string }[];
+    jobTitle?: string;
+    companyName?: string;
+    personType?: { subclass?: string };
+  };
+  return compact({
+    id: p.id,
+    displayName: p.displayName,
+    emails: p.scoredEmailAddresses?.map((e) => e.address),
+    jobTitle: p.jobTitle,
+    companyName: p.companyName,
+    type: p.personType?.subclass,
+  });
+});
 
 const USER_SEARCH_TIP =
   '$search on /users uses property-scoped syntax: $search="displayName:Spencer" or ' +
@@ -41,6 +62,7 @@ export const usersTools: readonly Tool[] = [
     method: 'GET',
     path: '/users/{user-id}',
     scopes: ['User.ReadBasic.All'],
+    projection: 'user',
     params: [
       {
         name: 'user-id',
@@ -50,5 +72,37 @@ export const usersTools: readonly Tool[] = [
       OData.select,
     ],
     llmTip: USER_SELECT_TIP,
+  },
+  {
+    name: 'people-search',
+    description:
+      'Find the people most relevant to the signed-in user — colleagues AND external contacts they ' +
+      'email or meet with — ranked by how much they interact, with fuzzy name matching. Use this to ' +
+      'resolve "Jane from Contoso" to an address; use user-search for an exact in-tenant directory lookup.',
+    method: 'GET',
+    path: '/me/people',
+    scopes: ['People.Read'],
+    projection: 'person',
+    shape: shapePeople,
+    params: [
+      {
+        name: 'search',
+        location: 'query',
+        schema: z
+          .string()
+          .describe(
+            'Fuzzy name or alias, e.g. "jane" or "Jane Doe". Prefix topic: to match people by email ' +
+              'subject matter, e.g. "topic: budget". Cannot combine with skip.'
+          )
+          .optional(),
+      },
+      OData.filter,
+      OData.select,
+      OData.top,
+      OData.skip,
+    ],
+    llmTip:
+      'Each result: id, displayName, emails, jobTitle, companyName, and type (OrganizationUser, ' +
+      'PersonalContact, ImplicitContact, ...). Omit search to get the top-ranked people overall.',
   },
 ];

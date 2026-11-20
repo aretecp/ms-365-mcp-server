@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { OData, type Tool } from './types.js';
+import { driveItemDetail, driveItemSummary, listShape } from './shapes.js';
 
 const itemIdParam: Tool['params'][number] = {
   name: 'item-id',
@@ -25,6 +26,7 @@ export const filesTools: readonly Tool[] = [
     path: '/me/drive/root/children',
     scopes: ['Files.Read'],
     projection: 'driveItem',
+    shape: listShape(driveItemSummary),
     resolverParams: ['item-id'],
     pathResolver: (p) =>
       typeof p['item-id'] === 'string' && p['item-id'].length > 0
@@ -52,6 +54,7 @@ export const filesTools: readonly Tool[] = [
     path: '/me/drive/root',
     scopes: ['Files.Read'],
     projection: 'driveItem',
+    shape: driveItemDetail,
     resolverParams: ['item-id'],
     pathResolver: (p) =>
       typeof p['item-id'] === 'string' && p['item-id'].length > 0

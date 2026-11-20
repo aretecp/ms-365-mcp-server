@@ -1,5 +1,62 @@
 import { z } from 'zod';
 import { OData, type Tool } from './types.js';
+import { flattenedSearch, searchRequestSchema } from './search.js';
+import { compact, driveItemDetail, driveItemSummary, listShape } from './shapes.js';
+
+/** SharePoint columns Graph returns on every list item that carry no content. */
+const SYSTEM_FIELDS: Record<string, true> = {
+  ContentType: true,
+  Edit: true,
+  LinkTitle: true,
+  LinkTitleNoMenu: true,
+  ItemChildCount: true,
+  FolderChildCount: true,
+  Attachments: true,
+  AuthorLookupId: true,
+  EditorLookupId: true,
+  AppAuthorLookupId: true,
+  AppEditorLookupId: true,
+  DocIcon: true,
+  ComplianceAssetId: true,
+};
+
+/** List row → id, link, modified time, and the content columns (system/internal columns dropped). */
+const shapeListItems = listShape((raw) => {
+  const item = raw as {
+    id?: string;
+    webUrl?: string;
+    lastModifiedDateTime?: string;
+    fields?: Record<string, unknown>;
+  };
+  const fields = Object.fromEntries(
+    Object.entries(item.fields ?? {}).filter(
+      ([k]) => !k.startsWith('@') && !k.startsWith('_') && !SYSTEM_FIELDS[k]
+    )
+  );
+  return compact({
+    id: item.id,
+    webUrl: item.webUrl,
+    lastModifiedDateTime: item.lastModifiedDateTime,
+    fields,
+  });
+});
+
+/** List (structured table) → id, name, link, template, and whether it is hidden. */
+const shapeLists = listShape((raw) => {
+  const l = raw as {
+    id?: string;
+    displayName?: string;
+    webUrl?: string;
+    list?: { template?: string; hidden?: boolean };
+  };
+  return compact({
+    id: l.id,
+    displayName: l.displayName,
+    webUrl: l.webUrl,
+    template: l.list?.template,
+    hidden: l.list?.hidden || undefined,
+  });
+});
 
 const SITE_ID_HINT =
   'Site id is either the GUID returned by sharepoint-site-list or the path form ' +
@@ -12,6 +69,61 @@ const DRIVE_LISTING_TIP =
   'SharePoint document libraries and any other drive you have access to.';
 
 export const sharepointTools: readonly Tool[] = [
+  // ---------- Search ----------
+
+  {
+    name: 'sharepoint-search',
+    description:
+      'Search files and folders by name or content across OneDrive and every SharePoint site the ' +
+      'signed-in user can read. This is the way to FIND a document; the *-children-list tools only ' +
+      "browse a known folder. Results honor the user's existing permissions. Returns " +
+      '{ hits, moreResultsAvailable, nextFrom? }; for the next page resend with from = nextFrom.',
+    method: 'POST',
+    path: '/search/query',
+    // driveItem/listItem/list search accepts Sites.Read.All (already
+    // requested by the sharepoint-* reads). No new consent.
+    scopes: ['Sites.Read.All'],
+    readOnly: true,
+    execute: flattenedSearch((item) => {
+      const parent = (item['parentReference'] ?? {}) as Record<string, unknown>;
+      const modifiedBy = (item['lastModifiedBy'] ?? {}) as { user?: { displayName?: string } };
+      return {
+        id: item['id'],
+        driveId: parent['driveId'],
+        name: item['name'] ?? item['displayName'],
+        webUrl: item['webUrl'],
+        lastModifiedDateTime: item['lastModifiedDateTime'],
+        lastModifiedBy: modifiedBy.user?.displayName,
+        type: item['@odata.type'],
+      };
+    }),
+    params: [
+      {
+        name: 'body',
+        location: 'body',
+        schema: searchRequestSchema({
+          entityTypes: z
+            .array(z.enum(['driveItem', 'listItem', 'list']))
+            .min(1)
+            .default(['driveItem'])
+            .describe(
+              'driveItem (files/folders, default), listItem, list. To find sites use sharepoint-site-list.'
+            ),
+          queryDescription:
+            'Words to find, plus optional KQL: filename:budget, filetype:xlsx, author:"Jane Doe", ' +
+            'path:"https://tenant.sharepoint.com/sites/Deals", LastModifiedTime>2026-01-01. ' +
+            'Files only: add ContentTypeId:0x0101*. Folders only: add ContentTypeId:0x0120*.',
+          maxSize: 25,
+        }),
+      },
+    ],
+    llmTip:
+      'A driveItem hit carries id + driveId: pass them to sharepoint-drive-item-get / ' +
+      'sharepoint-drive-children-list (drive-id + driveItem-id), or fetch bytes with download-bytes ' +
+      'at /drives/{driveId}/items/{id}/content. Without a ContentTypeId filter, driveItem hits also ' +
+      'include site pages and news posts.',
+  },
+
   // ---------- Sites ----------
 
   {
@@ -21,6 +133,7 @@ export const sharepointTools: readonly Tool[] = [
     method: 'GET',
     path: '/sites',
     scopes: ['Sites.Read.All'],
+    projection: 'site',
     params: [
       {
         name: 'search',
@@ -38,8 +151,7 @@ export const sharepointTools: readonly Tool[] = [
     ],
     llmTip:
       'The `search` query parameter here is a plain SharePoint search keyword (not OData $search). ' +
-      'Returns sites matching the keyword in title, URL, or content. ' +
-      'Use $select=id,name,displayName,webUrl to keep responses small.',
+      'Returns sites matching the keyword in title, URL, or content.',
   },
   {
     name: 'sharepoint-site-get',
@@ -47,6 +159,7 @@ export const sharepointTools: readonly Tool[] = [
     method: 'GET',
     path: '/sites/{site-id}',
     scopes: ['Sites.Read.All'],
+    projection: 'site',
     params: [
       {
         name: 'site-id',
@@ -67,6 +180,7 @@ export const sharepointTools: readonly Tool[] = [
     method: 'GET',
     path: '/sites/{site-id}/drives',
     scopes: ['Sites.Read.All'],
+    projection: 'drive',
     params: [
       {
         name: 'site-id',
@@ -89,6 +203,7 @@ export const sharepointTools: readonly Tool[] = [
     path: '/drives/{drive-id}/root/children',
     scopes: ['Sites.Read.All'],
     projection: 'driveItem',
+    shape: listShape(driveItemSummary),
     resolverParams: ['drive-id', 'driveItem-id'],
     pathResolver: (p) => {
       const drive = encodeURIComponent(String(p['drive-id'] ?? ''));
@@ -126,6 +241,7 @@ export const sharepointTools: readonly Tool[] = [
     path: '/drives/{drive-id}/root',
     scopes: ['Sites.Read.All'],
     projection: 'driveItem',
+    shape: driveItemDetail,
     resolverParams: ['drive-id', 'driveItem-id'],
     pathResolver: (p) => {
       const drive = encodeURIComponent(String(p['drive-id'] ?? ''));
@@ -161,6 +277,8 @@ export const sharepointTools: readonly Tool[] = [
     method: 'GET',
     path: '/sites/{site-id}/lists',
     scopes: ['Sites.Read.All'],
+    projection: 'list',
+    shape: shapeLists,
     params: [
       {
         name: 'site-id',
@@ -180,6 +298,7 @@ export const sharepointTools: readonly Tool[] = [
     method: 'GET',
     path: '/sites/{site-id}/lists/{list-id}/items',
     scopes: ['Sites.Read.All'],
+    shape: shapeListItems,
     params: [
       {
         name: 'site-id',

@@ -190,23 +190,82 @@ These are documented for completeness; no new issues filed.
 
 ---
 
+## Connector-parity writes (2026-11 addendum)
+
+Added to match the Anthropic Microsoft 365 connector. Tools with an `execute` handler
+(`Tool.execute` in `src/tools/types.ts`) build their Graph request bodies server-side from
+validated params; the model never supplies the raw body. The precondition probes for the
+existing guards were also found to be refusing every call in production (they read the MCP
+text envelope from `graphRequest` instead of the raw object); fixed by switching them to
+`makeRequest` and covered by `test/precondition-real-graphclient.test.ts`.
+
+### `mail-draft-reply-create`
+
+- **Graph endpoint**: `POST /me/messages/{message-id}/createReply` | `createReplyAll` | `createForward`
+- **Required scope**: `Mail.ReadWrite`
+- **Graph layer accepts**: a new draft referencing any message the caller can read. The original message is not modified.
+- **No gap**: creates a new draft; sending goes through `mail-draft-send` and its same-domain guard. `message-id` is validated as a single path segment.
+
+### `mail-message-categories-modify` / `mail-thread-categories-modify`
+
+- **Graph endpoint**: `GET` then `PATCH /me/messages/{id}`; the thread tool lists `/me/messages?$filter=conversationId eq '…'` first.
+- **Required scope**: `Mail.ReadWrite`
+- **Graph layer accepts**: any property PATCH on any message — read state, flags, body of drafts, etc.
+- **Deliberate exception to draft-only**: these are the only tools that write to received/sent mail. The handler builds `{ categories }` itself from validated names, so no other property is reachable. The thread tool reads the whole thread first, refuses threads over 100 messages and untrusted `@odata.nextLink`s before any write, and reports per-message failures.
+- **Residual risk**: an agent can relabel mail it can read. Categories are metadata only; nothing is deleted, moved, sent, or marked read.
+
+### `mail-category-create` / `mail-category-update` / `mail-category-delete`
+
+- **Graph endpoint**: `POST /me/outlook/masterCategories`, `PATCH`/`DELETE /me/outlook/masterCategories/{id}`
+- **Required scope**: `MailboxSettings.ReadWrite`
+- **Graph layer accepts**: master-category writes, and — at this scope — any other mailbox setting (auto-replies, time zone, working hours) via `/me/mailboxSettings`.
+- **No gap at the tool level**: the tools target the master-category list only, and the body schemas are `.strict()` (`displayName`/`color` on create, `color` on update). The broader scope is not exposed by any tool. Deleting a category leaves the name on tagged messages, uncolored.
+
+### `teams-chat-create`
+
+- **Graph endpoint**: `POST /chats`
+- **Required scope**: `Chat.Create`
+- **Graph layer accepts**: one-on-one and group chats with any member the caller can bind — in-tenant members, B2B tenant guests (in-tenant object ids), and out-of-tenant users bound with a `tenantId`.
+- **Guardrail (in code)**: the handler builds the body. It always adds the caller, GUID-validates member ids, and GETs each member first: `userType=Guest`, a `#EXT#` UPN, or an unreadable profile refuses the call before `POST /chats`. Members bind with role `owner` and no `tenantId`. Count and topic rules are checked before any call.
+
+### `download-bytes` (tightened)
+
+- **Was**: any `/`-relative GET, returning JSON for non-binary targets — so the new `MailboxSettings.*`, `Calendars.Read.Shared`, and `People.Read` scopes would have been readable through a default-allowed tool, bypassing per-tool policy.
+- **Now**: the path must end in `/content` or `/$value` and contain no `.`/`..` segments (raw or percent-encoded).
+
+### OneDrive / SharePoint file writes (`drive-*`)
+
+- **Graph endpoints**: `POST …:/{name}:/createUploadSession` and `POST …/items/{id}/createUploadSession` (bytes then PUT to the returned upload URL), `POST …/children`, `PATCH …/items/{id}`, `POST …/items/{id}/copy`, `DELETE …/items/{id}` under `/me/drive` or `/drives/{drive-id}`
+- **Required scope**: `Files.ReadWrite.All` (delegated)
+- **Graph layer accepts**: create, overwrite, move, copy, and delete — including whole folder trees and cross-drive copies — on any file the signed-in user can edit, plus sharing links and permissions on those items.
+- **Guardrails (in code, `src/tools/drive-writes.ts`)**: one item per call. The server's GET-before-write checks (name free, eTag equal, item kind, same drive) are early refusals, **not atomic**: something can change between the GET and the write. The atomic guarantees come from Graph's documented conditions — uploads use an upload session with `conflictBehavior=fail` (a name created mid-session fails the commit with 409) and folder create sends the same; rename and move send no conflict annotation (Graph documents none for PATCH) and rely on Graph's default refusal of a name clash, to be confirmed in the dev-tenant test; content updates refuse `*`/unquoted eTags and send `If-Match` on `createUploadSession` (412 on mismatch, checked at session creation). Move/copy refuse unless both ends share a `driveId`, the destination is a folder, and neither is a shortcut or the source root — item ids cannot change drive or kind, so these GETs are not racy; `drive-item-copy` additionally refuses a folder/notebook/shortcut source, since Graph copies folders recursively and this server is one-item-per-call. Delete refuses folders, notebooks, shortcuts, and the root (likewise stable per id). No tool creates sharing links or changes permissions. All seven tools are off `defaults.allow`. `/mcp` accepts 8 MB bodies, parsed only after authentication, so base64 uploads reach these guards.
+- **eTag window**: Graph documents the `If-Match` check on `createUploadSession` at session creation, not for the rest of the upload. The eTag must match the item's current value when the call starts; an edit made during the upload itself (between session creation and the single-range commit) is not guaranteed to be caught, so the prior version can be overwritten in that sub-second window where library versioning is on.
+- **Residual risk**: the same-drive rule bounds these tools only. `download-bytes` + `drive-file-upload` can re-upload any readable content into any writable drive, and within one drive an agent can still move or copy into a folder that has an external or Anyone sharing link. It can rename, move, or overwrite (versioned, where the library keeps versions) any file the user can edit, and delete files one at a time (recycle bin, tenant retention).
+
+---
+
 ## Summary
 
-| Tool                         | Status                                          | Tracked in                                                                        |
-| ---------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
-| `create-draft-email`         | No gap (creates new)                            | —                                                                                 |
-| `update-mail-message`        | Closed (`assertIsDraft`)                        | shipped v2.1.0                                                                    |
-| `add-mail-attachment`        | Closed (`assertIsDraft`)                        | shipped v2.1.0                                                                    |
-| `delete-mail-message`        | Closed (`assertIsDraft`)                        | shipped v2.1.0                                                                    |
-| `create-calendar-event`      | No gap (creates new)                            | —                                                                                 |
-| `update-calendar-event`      | Closed (`assertIsOrganizer`)                    | [#10](https://github.com/aretecp/ms-365-mcp-server/issues/10) (shipped `8fa98e8`) |
-| `delete-calendar-event`      | Closed (`assertIsOrganizer`)                    | [#10](https://github.com/aretecp/ms-365-mcp-server/issues/10) (shipped `8fa98e8`) |
-| `send-chat-message`          | **Gap** (cross-tenant / hidden chats)           | [#12](https://github.com/aretecp/ms-365-mcp-server/issues/12)                     |
-| `send-channel-message`       | **Gap** (private/shared channels)               | [#13](https://github.com/aretecp/ms-365-mcp-server/issues/13)                     |
-| `send-channel-message-reply` | **Gap** (inherited from `send-channel-message`) | [#13](https://github.com/aretecp/ms-365-mcp-server/issues/13)                     |
-| `create-online-meeting`      | No gap (creates new)                            | —                                                                                 |
-| `update-online-meeting`      | No gap (Graph natural scoping)                  | —                                                                                 |
-| `delete-online-meeting`      | No gap (Graph natural scoping)                  | —                                                                                 |
+| Tool                         | Status                                                      | Tracked in                                                                        |
+| ---------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `create-draft-email`         | No gap (creates new)                                        | —                                                                                 |
+| `update-mail-message`        | Closed (`assertIsDraft`)                                    | shipped v2.1.0                                                                    |
+| `add-mail-attachment`        | Closed (`assertIsDraft`)                                    | shipped v2.1.0                                                                    |
+| `delete-mail-message`        | Closed (`assertIsDraft`)                                    | shipped v2.1.0                                                                    |
+| `create-calendar-event`      | No gap (creates new)                                        | —                                                                                 |
+| `update-calendar-event`      | Closed (`assertIsOrganizer`)                                | [#10](https://github.com/aretecp/ms-365-mcp-server/issues/10) (shipped `8fa98e8`) |
+| `delete-calendar-event`      | Closed (`assertIsOrganizer`)                                | [#10](https://github.com/aretecp/ms-365-mcp-server/issues/10) (shipped `8fa98e8`) |
+| `send-chat-message`          | **Gap** (cross-tenant / hidden chats)                       | [#12](https://github.com/aretecp/ms-365-mcp-server/issues/12)                     |
+| `send-channel-message`       | **Gap** (private/shared channels)                           | [#13](https://github.com/aretecp/ms-365-mcp-server/issues/13)                     |
+| `send-channel-message-reply` | **Gap** (inherited from `send-channel-message`)             | [#13](https://github.com/aretecp/ms-365-mcp-server/issues/13)                     |
+| `create-online-meeting`      | No gap (creates new)                                        | —                                                                                 |
+| `update-online-meeting`      | No gap (Graph natural scoping)                              | —                                                                                 |
+| `delete-online-meeting`      | No gap (Graph natural scoping)                              | —                                                                                 |
+| `mail-draft-reply-create`    | No gap (creates new draft)                                  | —                                                                                 |
+| `mail-*-categories-modify`   | Deliberate exception; body limited to categories            | —                                                                                 |
+| `mail-category-*` writes     | No gap (strict bodies; master list only)                    | —                                                                                 |
+| `teams-chat-create`          | Closed (server-built body, in-tenant members)               | —                                                                                 |
+| `drive-*` file writes        | Narrowed (no overwrite, eTag, same-drive, file-only delete) | —                                                                                 |
 
 Two new gap-tracking issues filed: **#12** (chat target scoping) and **#13** (channel target scoping). Mail and calendar gaps are tracked in pre-existing tickets.
 
